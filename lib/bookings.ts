@@ -3,15 +3,17 @@ import {
   combineDateTime,
   extractBookingTags,
   normalizePhone,
-  to24HourTime,
 } from "@/lib/bookingValidation";
 import { redis } from "@/lib/redis";
+import { addCustomSlot } from "@/lib/slots";
+import { normalizeTimeInput } from "@/lib/time";
 import type { Booking, BookingSource, BookingStatus } from "@/types/booking";
 
 const BOOKINGS_KEY = "dira:bookings";
 
 interface LegacyBookingRecord {
   id?: string;
+  type?: string;
   createdAt?: string;
   status?: string;
   source?: string;
@@ -84,8 +86,10 @@ export async function getBookings() {
 
 export async function addBooking(booking: NewBooking) {
   const current = await readBookings();
+  await addCustomSlot(booking.time);
   const nextBooking: Booking = {
     ...booking,
+    type: booking.type ?? "booking",
     id: crypto.randomUUID(),
     createdAt: new Date().toISOString(),
     reminder24Sent: booking.reminder24Sent ?? false,
@@ -94,6 +98,40 @@ export async function addBooking(booking: NewBooking) {
 
   await writeBookings([...current, nextBooking]);
   return nextBooking;
+}
+
+export async function addBlockedSlot(input: { date: string; time: string; notes?: string }) {
+  const current = await readBookings();
+  const normalizedTime = normalizeTimeInput(input.time);
+  if (!normalizedTime) {
+    throw new Error("Invalid slot time.");
+  }
+  await addCustomSlot(normalizedTime);
+  const blockedSlot: Booking = {
+    id: crypto.randomUUID(),
+    type: "blocked",
+    name: "Blocked Slot",
+    phone: "",
+    phoneNormalized: "",
+    phoneValid: false,
+    serviceId: "consultation",
+    serviceName: "Blocked Slot",
+    price: 0,
+    date: input.date,
+    time: normalizedTime,
+    datetime: combineDateTime(input.date, normalizedTime),
+    notes: input.notes?.trim() ?? "",
+    tags: ["blocked"],
+    status: "upcoming",
+    source: "manual",
+    createdAt: new Date().toISOString(),
+    needsRecommendation: false,
+    reminder24Sent: true,
+    reminder2hSent: true,
+  };
+
+  await writeBookings([...current, blockedSlot]);
+  return blockedSlot;
 }
 
 export async function updateBooking(id: string, updates: BookingUpdates) {
@@ -124,7 +162,10 @@ export async function updateBooking(id: string, updates: BookingUpdates) {
   }
 
   const date = updates.date ?? existing.date;
-  const time = updates.time ?? existing.time;
+  const time = normalizeTimeInput(updates.time ?? existing.time);
+  if (!time) {
+    throw new Error("Invalid booking time.");
+  }
   const notes = updates.notes ?? existing.notes;
   const tags = extractBookingTags(notes);
   const nextPrice =
@@ -151,6 +192,7 @@ export async function updateBooking(id: string, updates: BookingUpdates) {
     needsRecommendation: service.id === "consultation" ? true : undefined,
   };
 
+  await addCustomSlot(time);
   const next = [...current];
   next[index] = updatedBooking;
   await writeBookings(next);
@@ -172,10 +214,41 @@ export async function deleteBooking(id: string) {
 
 function normalizeBookingRecord(record: LegacyBookingRecord): Booking | null {
   const id = record.id?.trim();
+  const type = record.type === "blocked" ? "blocked" : "booking";
   const name = record.name?.trim() ?? "";
   const phone = record.phone?.trim() ?? "";
   const date = record.date?.trim() ?? "";
-  const time = to24HourTime(record.time ?? "") ?? "";
+  const time = normalizeTimeInput(record.time ?? "") ?? "";
+
+  if (type === "blocked") {
+    if (!id || !date || !time) {
+      return null;
+    }
+
+    return {
+      id,
+      type,
+      name: name || "Blocked Slot",
+      phone: "",
+      phoneNormalized: "",
+      phoneValid: false,
+      serviceId: "consultation",
+      serviceName: "Blocked Slot",
+      price: 0,
+      date,
+      time,
+      datetime: record.datetime?.trim() || combineDateTime(date, time),
+      notes: record.notes?.trim() ?? "",
+      tags: ["blocked"],
+      status: "upcoming",
+      source: "manual",
+      createdAt: record.createdAt?.trim() || new Date(combineDateTime(date, time)).toISOString(),
+      needsRecommendation: false,
+      reminder24Sent: true,
+      reminder2hSent: true,
+    };
+  }
+
   const service =
     (record.serviceId && getServiceById(record.serviceId)) ||
     getServiceByInput(record.serviceName ?? record.service ?? "");
@@ -200,6 +273,7 @@ function normalizeBookingRecord(record: LegacyBookingRecord): Booking | null {
 
   return {
     id,
+    type,
     name,
     phone,
     phoneNormalized: record.phoneNormalized ?? phoneInfo.normalized,
@@ -243,11 +317,11 @@ function normalizeSource(source?: string): BookingSource {
 }
 
 export function filterActiveBookings(bookings: Booking[]) {
-  return bookings.filter((booking) => booking.status !== "cancelled");
+  return bookings.filter((booking) => booking.type !== "blocked" && booking.status !== "cancelled");
 }
 
 export function filterCompletedRevenueBookings(bookings: Booking[]) {
-  return bookings.filter((booking) => booking.status !== "cancelled");
+  return bookings.filter((booking) => booking.type !== "blocked" && booking.status !== "cancelled");
 }
 
 export function getBookingServiceId(booking: Booking): ServiceId {

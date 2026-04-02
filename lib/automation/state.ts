@@ -37,7 +37,12 @@ export async function updateClientAutomationState(
 }
 
 export async function saveAutomationReport(report: AutomationCycleReport) {
-  await redis.setJSON(AUTOMATION_REPORT_KEY, report);
+  await redis.setJSON(AUTOMATION_REPORT_KEY, {
+    generatedAt: report.generatedAt,
+    reminders: report.reminders,
+    reactivations: report.reactivations,
+    insights: [],
+  } satisfies AutomationCycleReport);
 }
 
 export async function getAutomationReport() {

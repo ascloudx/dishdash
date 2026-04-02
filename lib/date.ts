@@ -1,4 +1,5 @@
 import { BUSINESS } from "@/config/business";
+import { formatTimeTo12Hour, timeToMinutes } from "@/lib/time";
 
 function getDateParts(date: string) {
   const [year, month, day] = date.split("-").map(Number);
@@ -56,22 +57,13 @@ export function isOlderThanDays(date: string, compareTo: string, days: number) {
 }
 
 export function formatBusinessTime(time: string) {
-  const match = time.match(/^(\d{2}):(\d{2})$/);
-  if (!match) {
-    return time;
-  }
-
-  const date = new Date(Date.UTC(2026, 0, 1, Number(match[1]), Number(match[2])));
-  return new Intl.DateTimeFormat(BUSINESS.locale, {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-    timeZone: BUSINESS.timezone,
-  }).format(date);
+  return formatTimeTo12Hour(time);
 }
 
 export function getDateTimeForBusiness(date: string, time: string) {
-  const [hours, minutes] = time.split(":").map(Number);
+  const totalMinutes = timeToMinutes(time) ?? 0;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
   const { year, month, day } = getDateParts(date);
   return new Date(Date.UTC(year, month - 1, day, hours, minutes));
 }
@@ -91,8 +83,7 @@ export function getHoursUntil(date: string, time: string, now = new Date()) {
   const currentHour = Number(parts.find((part) => part.type === "hour")?.value ?? "0");
   const currentMinute = Number(parts.find((part) => part.type === "minute")?.value ?? "0");
   const currentTotalMinutes = currentHour * 60 + currentMinute;
-  const [hours, minutes] = time.split(":").map(Number);
-  const targetTotalMinutes = hours * 60 + minutes;
+  const targetTotalMinutes = timeToMinutes(time) ?? 0;
 
   if (date === currentDate) {
     return (targetTotalMinutes - currentTotalMinutes) / 60;

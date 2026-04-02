@@ -9,7 +9,11 @@ interface WhatsAppMessageData {
 }
 
 function normalizePhone(phone: string) {
-  return phone.replace(/\D/g, "");
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 10) {
+    return `1${digits}`;
+  }
+  return digits;
 }
 
 export function buildWhatsAppMessage(type: AutomationActionType, data: WhatsAppMessageData) {

@@ -5,6 +5,7 @@ export type BookingSource = "website" | "manual";
 
 export interface Booking {
   id: string;
+  type?: "booking" | "blocked";
   name: string;
   phone: string;
   phoneNormalized: string;

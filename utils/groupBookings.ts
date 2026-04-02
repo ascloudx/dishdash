@@ -1,5 +1,6 @@
 import type { Booking } from "@/types/booking";
 import { addDaysToDateString } from "@/lib/date";
+import { compareTimeStrings } from "@/lib/time";
 
 /**
  * Groups an array of bookings by date (YYYY-MM-DD),
@@ -19,7 +20,7 @@ export function groupBookingsByDate(
 
   // Sort each group by time
   for (const date in groups) {
-    groups[date].sort((a, b) => a.time.localeCompare(b.time));
+    groups[date].sort((a, b) => compareTimeStrings(a.time, b.time));
   }
 
   return groups;
@@ -34,7 +35,7 @@ export function getBookingsForDate(
 ): Booking[] {
   return bookings
     .filter((b) => b.date === date)
-    .sort((a, b) => a.time.localeCompare(b.time));
+    .sort((a, b) => compareTimeStrings(a.time, b.time));
 }
 
 /**
@@ -54,7 +55,7 @@ export function getBookingsForWeek(
   for (const date of weekDates) {
     result[date] = bookings
       .filter((b) => b.date === date && b.status !== "cancelled")
-      .sort((a, b) => a.time.localeCompare(b.time));
+      .sort((a, b) => compareTimeStrings(a.time, b.time));
   }
 
   return result;

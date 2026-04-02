@@ -16,7 +16,7 @@ interface BookingCardProps {
 export default function BookingCard({ booking, onStatusChange, onEdit, onDelete }: BookingCardProps) {
   const tags = extractTags(booking.tags);
   const whatsappLink = generateWhatsAppLink(
-    booking.phone,
+    booking.phoneNormalized || booking.phone,
     buildReminderMessage(booking.name, formatBusinessTime(booking.time))
   );
 

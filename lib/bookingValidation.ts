@@ -1,4 +1,5 @@
 import { getServiceById, type ServiceId } from "@/config/services";
+import { normalizeTimeInput } from "@/lib/time";
 import type { Booking, BookingSource, BookingStatus } from "@/types/booking";
 
 export interface BookingFormInput {
@@ -44,13 +45,20 @@ function isValidDate(date: string) {
 }
 
 function isValidTime(time: string) {
-  return /^([01]\d|2[0-3]):[0-5]\d$/.test(time);
+  return /^(\d{1,2}):(\d{2})\s?(AM|PM)$/i.test(time);
 }
 
 export function normalizePhone(phone: string): NormalizedPhone {
   const raw = phone.trim();
-  const normalized = raw.replace(/\D/g, "");
-  const valid = normalized.length >= 10 && normalized.length <= 15;
+  const digits = raw.replace(/\D/g, "");
+  const valid = digits.length >= 10 && digits.length <= 15;
+  const normalized = valid
+    ? digits.length === 10
+      ? `+1${digits}`
+      : digits.startsWith("1") && digits.length === 11
+        ? `+${digits}`
+        : `+${digits}`
+    : digits;
 
   return {
     raw,
@@ -59,31 +67,23 @@ export function normalizePhone(phone: string): NormalizedPhone {
   };
 }
 
-export function to24HourTime(time: string) {
-  const value = time.trim();
-  if (isValidTime(value)) {
-    return value;
+export function combineDateTime(date: string, time: string) {
+  const normalizedTime = normalizeTimeInput(time);
+  if (!normalizedTime) {
+    throw new Error("Invalid booking time.");
   }
 
-  const match = value.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  const match = normalizedTime.match(/^(\d{1,2}):(\d{2})\s(AM|PM)$/);
   if (!match) {
-    return null;
+    throw new Error("Invalid booking time.");
   }
 
   const hours = Number(match[1]);
-  const minutes = match[2];
-  const meridiem = match[3].toUpperCase();
-
-  if (hours < 1 || hours > 12) {
-    return null;
-  }
-
+  const minutes = Number(match[2]);
+  const meridiem = match[3];
   const normalizedHours = meridiem === "AM" ? hours % 12 : (hours % 12) + 12;
-  return `${String(normalizedHours).padStart(2, "0")}:${minutes}`;
-}
 
-export function combineDateTime(date: string, time: string) {
-  return `${date}T${time}:00.000Z`;
+  return `${date}T${String(normalizedHours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00.000Z`;
 }
 
 export function extractBookingTags(notes: string) {
@@ -120,7 +120,7 @@ export function validateBookingInput(
   const phone = normalizePhone(input.phone ?? "");
   const service = getServiceById(input.serviceId?.trim() ?? "");
   const date = input.date?.trim() ?? "";
-  const time = to24HourTime(input.time ?? "");
+  const time = normalizeTimeInput(input.time ?? "");
   const notes = (input.notes ?? "").trim();
   const source = input.source === "manual" ? "manual" : "website";
 
@@ -141,7 +141,7 @@ export function validateBookingInput(
   }
 
   if (!time || !isValidTime(time)) {
-    return { ok: false, error: "Time must be in HH:mm or h:mm AM/PM format." };
+    return { ok: false, error: "Time must be in h:mm AM/PM format." };
   }
 
   return {
@@ -216,9 +216,9 @@ export function validateBookingUpdates(
   }
 
   if ("time" in input) {
-    const time = to24HourTime(input.time ?? "");
+    const time = normalizeTimeInput(input.time ?? "");
     if (!time || !isValidTime(time)) {
-      return { ok: false, error: "Time must be in HH:mm or h:mm AM/PM format." };
+      return { ok: false, error: "Time must be in h:mm AM/PM format." };
     }
     updates.time = time;
   }

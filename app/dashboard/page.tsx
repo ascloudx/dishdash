@@ -6,30 +6,35 @@ import BookingCard from "@/components/BookingCard";
 import OwnerFocusPanel from "@/components/OwnerFocusPanel";
 import TodayActionsPanel from "@/components/TodayActionsPanel";
 import type { Booking } from "@/types/booking";
-import {
-  calculateTotalRevenue,
-  getMostPopularService,
-  getTodayBookings,
-  getWeekBookings,
-} from "@/utils/calculateRevenue";
+import type { DashboardPayload } from "@/lib/dashboard/types";
+import { getTodayBookings } from "@/utils/calculateRevenue";
 import { getTodayDateString } from "@/lib/date";
+import { compareTimeStrings } from "@/lib/time";
 
 export default function DashboardPage() {
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [dashboard, setDashboard] = useState<DashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const today = getTodayDateString();
 
   const fetchBookings = useCallback(async () => {
     try {
-      const res = await fetch("/api/bookings/list", { cache: "no-store" });
-      if (!res.ok) {
+      const [bookingsResponse, dashboardResponse] = await Promise.all([
+        fetch("/api/bookings/list", { cache: "no-store" }),
+        fetch("/api/dashboard", { cache: "no-store" }),
+      ]);
+
+      if (!bookingsResponse.ok || !dashboardResponse.ok) {
         throw new Error("Request failed");
       }
-      const data: Booking[] = await res.json();
-      setBookings(data);
+      const bookingsPayload: Booking[] = await bookingsResponse.json();
+      const dashboardPayload: DashboardPayload = await dashboardResponse.json();
+      setBookings(bookingsPayload);
+      setDashboard(dashboardPayload);
     } catch (error) {
       console.error("Failed to fetch bookings", error);
       setBookings([]);
+      setDashboard(null);
     } finally {
       setLoading(false);
     }
@@ -37,12 +42,12 @@ export default function DashboardPage() {
 
   const updateBookingStatus = useCallback(async (id: string, status: Booking["status"]) => {
     try {
-      const response = await fetch("/api/bookings/update", {
+      const response = await fetch(`/api/bookings/${id}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ id, updates: { status } }),
+        body: JSON.stringify({ updates: { status } }),
       });
 
       if (!response.ok) {
@@ -64,19 +69,11 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [fetchBookings]);
 
-  const todayBookings = getTodayBookings(bookings, today).sort((a, b) => a.time.localeCompare(b.time));
-  const weekBookings = getWeekBookings(bookings, today);
-  const todayRevenue = calculateTotalRevenue(todayBookings);
-  const weeklyRevenue = calculateTotalRevenue(weekBookings);
-  const topService = getMostPopularService(weekBookings);
-  const busiestHour = weekBookings
-    .reduce<Record<string, number>>((accumulator, booking) => {
-      const slot = `${booking.time.slice(0, 2)}:00`;
-      accumulator[slot] = (accumulator[slot] || 0) + 1;
-      return accumulator;
-    }, {});
-
-  const busiestSlot = Object.entries(busiestHour).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "—";
+  const todayBookings = getTodayBookings(bookings, today).sort((a, b) => compareTimeStrings(a.time, b.time));
+  const todayRevenue = dashboard?.analytics.revenueToday ?? 0;
+  const weeklyRevenue = dashboard?.targets.weekly.current ?? 0;
+  const topService = dashboard?.analytics.topService ?? null;
+  const busiestSlot = dashboard?.analytics.peakHour ?? "—";
 
   if (loading) {
     return (
@@ -101,7 +98,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-12">
-      <OwnerFocusPanel todayRevenue={todayRevenue} totalBookingsToday={todayBookings.length} />
+      {dashboard ? <OwnerFocusPanel data={dashboard} /> : null}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatsCard
@@ -183,7 +180,7 @@ export default function DashboardPage() {
           <div className="glass rounded-3xl p-6 space-y-4">
             <h3 className="text-xl font-bold">Data Integrity</h3>
             <div className="space-y-3 text-sm text-text-sub">
-              <p>{bookings.length} bookings loaded from `dira:bookings`.</p>
+              <p>{bookings.filter((booking) => booking.type !== "blocked").length} bookings loaded from `dira:bookings`.</p>
               <p>{todayBookings.filter((booking) => !booking.phoneValid).length} bookings today need phone review.</p>
               <p>{todayBookings.filter((booking) => booking.needsRecommendation).length} bookings today are consultations.</p>
             </div>

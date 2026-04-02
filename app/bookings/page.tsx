@@ -1,21 +1,26 @@
 'use client';
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import CalendarView from "@/components/CalendarView";
 import BookingCard from "@/components/BookingCard";
 import BookingFormModal from "@/components/BookingFormModal";
 import type { Booking, BookingStatus } from "@/types/booking";
 import type { Service } from "@/config/services";
 import { getTodayDateString } from "@/lib/date";
+import type { AppSettings } from "@/lib/settings";
 
 export default function BookingsPage() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [slots, setSlots] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [editorMode, setEditorMode] = useState<"create" | "edit">("create");
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [draftSlot, setDraftSlot] = useState<{ date: string; time: string } | null>(null);
   const today = getTodayDateString();
 
   const fetchBookings = useCallback(async () => {
@@ -48,14 +53,42 @@ export default function BookingsPage() {
     }
   }, []);
 
+  const fetchSettings = useCallback(async () => {
+    try {
+      const res = await fetch("/api/settings", { cache: "no-store" });
+      if (!res.ok) {
+        throw new Error("Request failed");
+      }
+      const data: AppSettings = await res.json();
+      setSettings(data);
+    } catch (error) {
+      console.error(error);
+      setSettings(null);
+    }
+  }, []);
+
+  const fetchSlots = useCallback(async () => {
+    try {
+      const res = await fetch("/api/slots", { cache: "no-store" });
+      if (!res.ok) {
+        throw new Error("Request failed");
+      }
+      const data = (await res.json()) as { slots: string[] };
+      setSlots(data.slots);
+    } catch (error) {
+      console.error(error);
+      setSlots([]);
+    }
+  }, []);
+
   const updateBookingStatus = useCallback(async (id: string, status: BookingStatus) => {
     try {
-      const response = await fetch("/api/bookings/update", {
+      const response = await fetch(`/api/bookings/${id}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ id, updates: { status } }),
+        body: JSON.stringify({ updates: { status } }),
       });
 
       if (!response.ok) {
@@ -94,28 +127,64 @@ export default function BookingsPage() {
   useEffect(() => {
     fetchBookings();
     fetchServices();
-  }, [fetchBookings, fetchServices]);
+    fetchSettings();
+    fetchSlots();
+  }, [fetchBookings, fetchServices, fetchSettings, fetchSlots]);
 
   const filtered = search.trim()
     ? bookings.filter(
         (booking) =>
-          booking.name.toLowerCase().includes(search.toLowerCase()) ||
-          booking.phone.includes(search) ||
-          booking.serviceName.toLowerCase().includes(search.toLowerCase())
+          booking.type !== "blocked" &&
+          (
+            booking.name.toLowerCase().includes(search.toLowerCase()) ||
+            booking.phone.includes(search) ||
+            booking.serviceName.toLowerCase().includes(search.toLowerCase())
+          )
       )
-    : bookings;
+    : bookings.filter((booking) => booking.type !== "blocked");
 
   function openCreate() {
     setEditorMode("create");
     setSelectedBooking(null);
+    setDraftSlot(null);
+    setEditorOpen(true);
+  }
+
+  function openCreateAtSlot(date: string, time: string) {
+    setEditorMode("create");
+    setSelectedBooking(null);
+    setDraftSlot({ date, time });
     setEditorOpen(true);
   }
 
   function openEdit(booking: Booking) {
     setEditorMode("edit");
     setSelectedBooking(booking);
+    setDraftSlot(null);
     setEditorOpen(true);
   }
+
+  const handleBlockSlot = useCallback(async (date: string, time: string) => {
+    try {
+      const response = await fetch("/api/bookings/block", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ date, time }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to block slot");
+      }
+
+      const blocked = (await response.json()) as Booking;
+      setBookings((current) => [...current, blocked].sort((a, b) => a.datetime.localeCompare(b.datetime)));
+      fetchSlots();
+    } catch (error) {
+      console.error(error);
+    }
+  }, [fetchSlots]);
 
   function handleSaved(saved: Booking) {
     setBookings((current) => {
@@ -138,14 +207,22 @@ export default function BookingsPage() {
             Bookings & Calendar <span>📅</span>
           </h2>
           <p className="text-text-sub mt-1">
-            All {bookings.length} appointments are loaded from live booking data in Redis.
+            All {bookings.filter((booking) => booking.type !== "blocked").length} appointments are loaded from live booking data in Redis.
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
+          <Link
+            href="/dashboard/settings"
+            className="rounded-full border border-white/80 bg-white/80 px-4 py-2.5 text-sm font-semibold text-text-sub"
+          >
+            Settings
+          </Link>
           <button
             onClick={() => {
               setLoading(true);
               fetchBookings();
+              fetchSettings();
+              fetchSlots();
             }}
             className="rounded-full border border-white/80 bg-white/80 px-4 py-2.5 text-sm font-semibold text-text-sub"
           >
@@ -212,22 +289,37 @@ export default function BookingsPage() {
           )}
         </div>
       ) : (
-        <CalendarView
-          bookings={bookings}
-          initialDate={today}
-          onStatusChange={updateBookingStatus}
-          onEdit={openEdit}
-          onDelete={handleDelete}
-        />
+        <div className="space-y-6">
+          <CalendarView
+            bookings={bookings}
+            initialDate={today}
+            settings={settings ?? undefined}
+            slots={slots}
+            onStatusChange={updateBookingStatus}
+            onEdit={openEdit}
+            onDelete={handleDelete}
+            onCreateSlot={openCreateAtSlot}
+            onBlockSlot={handleBlockSlot}
+          />
+        </div>
       )}
 
       <BookingFormModal
         open={editorOpen}
         services={services}
+        slots={slots}
         booking={selectedBooking}
         mode={editorMode}
-        onClose={() => setEditorOpen(false)}
-        onSaved={handleSaved}
+        defaultDate={draftSlot?.date}
+        defaultTime={draftSlot?.time}
+        onClose={() => {
+          setEditorOpen(false);
+          setDraftSlot(null);
+        }}
+        onSaved={(saved) => {
+          handleSaved(saved);
+          fetchSlots();
+        }}
       />
     </div>
   );

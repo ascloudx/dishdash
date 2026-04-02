@@ -2,22 +2,29 @@
 
 import { useState } from "react";
 import type { Booking, BookingStatus } from "@/types/booking";
+import { DEFAULT_SLOTS } from "@/config/slots";
 import { groupBookingsByDate, getBookingsForWeek } from "@/utils/groupBookings";
 import BookingCard from "./BookingCard";
 import { BUSINESS } from "@/config/business";
+import type { AppSettings } from "@/lib/settings";
 import {
   addDaysToDateString,
   formatBusinessDate,
   formatBusinessTime,
   getWeekStartDateString,
 } from "@/lib/date";
+import { compareTimeStrings, isTimeWithinHours } from "@/lib/time";
 
 interface CalendarViewProps {
   bookings: Booking[];
   initialDate: string;
+  settings?: AppSettings;
+  slots?: string[];
   onStatusChange?: (id: string, status: BookingStatus) => void;
   onEdit?: (booking: Booking) => void;
   onDelete?: (booking: Booking) => void;
+  onCreateSlot?: (date: string, time: string) => void;
+  onBlockSlot?: (date: string, time: string) => void;
 }
 
 function formatDate(dateStr: string) {
@@ -31,30 +38,47 @@ function formatDate(dateStr: string) {
 export default function CalendarView({
   bookings,
   initialDate,
+  settings,
+  slots = [],
   onStatusChange,
   onEdit,
   onDelete,
+  onCreateSlot,
+  onBlockSlot,
 }: CalendarViewProps) {
   const [view, setView] = useState<"day" | "week">("day");
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [weekStart, setWeekStart] = useState(getWeekStartDateString(initialDate));
 
+  const businessSettings = settings ?? {
+    businessHours: BUSINESS.operatingHours,
+    slotDuration: 60,
+    currency: "CAD",
+    dailyTarget: BUSINESS.dailyRevenueTarget,
+    weeklyTarget: BUSINESS.dailyRevenueTarget * 6,
+    monthlyTarget: BUSINESS.dailyRevenueTarget * 24,
+    yearlyTarget: BUSINESS.dailyRevenueTarget * 288,
+  };
   const grouped = groupBookingsByDate(bookings.filter((booking) => booking.status !== "cancelled"));
   const weekData = getBookingsForWeek(bookings, weekStart);
   const weekDates = Object.keys(weekData).sort();
   const dayBookings = grouped[selectedDate] || [];
-  const timelineSlots = Array.from(
-    { length: BUSINESS.operatingHours.end - BUSINESS.operatingHours.start + 1 },
-    (_, index) => {
-      const hour = BUSINESS.operatingHours.start + index;
-      const time = `${String(hour).padStart(2, "0")}:00`;
-      return {
-        time,
-        formatted: formatBusinessTime(time),
-        bookings: dayBookings.filter((booking) => booking.time.startsWith(`${String(hour).padStart(2, "0")}:`)),
-      };
-    }
-  );
+  const visibleSlots = (slots.length > 0 ? slots : [...DEFAULT_SLOTS])
+    .filter((slot) =>
+      isTimeWithinHours(
+        slot,
+        businessSettings.businessHours.start,
+        businessSettings.businessHours.end
+      )
+    )
+    .sort(compareTimeStrings);
+  const timelineSlots = visibleSlots.map((slot) => ({
+    time: slot,
+    formatted: formatBusinessTime(slot),
+    bookings: dayBookings
+      .filter((booking) => booking.time === slot)
+      .sort((left, right) => left.datetime.localeCompare(right.datetime)),
+  }));
 
   return (
     <div className="space-y-4">
@@ -106,7 +130,12 @@ export default function CalendarView({
                 key={slot.time}
                 className={`rounded-2xl border p-3 transition-all ${
                   slot.bookings.length > 0 ? "border-rose-100 bg-white shadow-sm" : "border-dashed border-rose-100 bg-rose-50/30"
-                }`}
+                } ${slot.bookings.length === 0 && onCreateSlot ? "cursor-pointer hover:border-brand/40 hover:bg-rose-50/60" : ""}`}
+                onClick={
+                  slot.bookings.length === 0 && onCreateSlot
+                    ? () => onCreateSlot(selectedDate, slot.time)
+                    : undefined
+                }
               >
                 <div className="mb-2 flex items-center justify-between">
                   <p className="text-xs font-semibold uppercase tracking-wide text-text-sub">{slot.formatted}</p>
@@ -124,17 +153,70 @@ export default function CalendarView({
                 {slot.bookings.length > 0 ? (
                   <div className="space-y-3">
                     {slot.bookings.map((booking) => (
-                      <BookingCard
-                        key={booking.id}
-                        booking={booking}
-                        onStatusChange={onStatusChange}
-                        onEdit={onEdit}
-                        onDelete={onDelete}
-                      />
+                      booking.type === "blocked" ? (
+                        <div
+                          key={booking.id}
+                          className="rounded-2xl border border-slate-200 bg-slate-100/80 p-4 text-sm text-slate-700"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="font-semibold">Blocked Slot</p>
+                              <p className="text-xs text-slate-500">
+                                {booking.notes || "Reserved and unavailable for booking."}
+                              </p>
+                            </div>
+                            {onDelete ? (
+                              <button
+                                type="button"
+                                onClick={() => onDelete(booking)}
+                                className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600"
+                              >
+                                Unblock
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : (
+                        <BookingCard
+                          key={booking.id}
+                          booking={booking}
+                          onStatusChange={onStatusChange}
+                          onEdit={onEdit}
+                          onDelete={onDelete}
+                        />
+                      )
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm font-medium text-gray-500">No booking scheduled in this business-hour slot.</p>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-gray-500">No booking scheduled in this business-hour slot.</p>
+                    <div className="flex flex-wrap gap-2">
+                      {onCreateSlot ? (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onCreateSlot(selectedDate, slot.time);
+                          }}
+                          className="rounded-full bg-brand px-3.5 py-2 text-xs font-semibold text-white"
+                        >
+                          Add Booking
+                        </button>
+                      ) : null}
+                      {onBlockSlot ? (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onBlockSlot(selectedDate, slot.time);
+                          }}
+                          className="rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-600"
+                        >
+                          Block Slot
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
                 )}
               </div>
             ))}

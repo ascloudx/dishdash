@@ -6,6 +6,10 @@ import {
   getWeekBookings,
 } from "@/utils/calculateRevenue";
 import { getTodayDateString } from "@/lib/date";
+import { getSettings } from "@/lib/settings";
+import { formatTimeTo12Hour, timeToMinutes } from "@/lib/time";
+import type { AppSettings } from "@/lib/settings";
+import type { Booking } from "@/types/booking";
 
 export interface TimeSlotStat {
   slot: string;
@@ -27,14 +31,19 @@ export interface AnalyticsData {
 }
 
 function toHourSlot(time: string) {
-  const hour = Number(time.split(":")[0] ?? "0");
-  return `${String(hour).padStart(2, "0")}:00`;
+  const totalMinutes = timeToMinutes(time) ?? 0;
+  const hourStart = Math.floor(totalMinutes / 60) * 60;
+  return formatTimeTo12Hour(`${String(Math.floor(hourStart / 60)).padStart(2, "0")}:${String(hourStart % 60).padStart(2, "0")}`);
 }
 
-export async function getAnalytics(): Promise<AnalyticsData> {
-  const bookings = await getBookings();
-  const today = getTodayDateString();
-  const activeBookings = bookings.filter((booking) => booking.status !== "cancelled");
+export function computeAnalytics(bookings: Booking[], settings: AppSettings, today = getTodayDateString()): AnalyticsData {
+  const activeBookings = bookings.filter(
+    (booking) =>
+      booking.type !== "blocked" &&
+      booking.status !== "cancelled" &&
+      (timeToMinutes(booking.time) ?? -1) >= settings.businessHours.start * 60 &&
+      (timeToMinutes(booking.time) ?? -1) < settings.businessHours.end * 60
+  );
   const todayBookings = activeBookings.filter((booking) => booking.date === today);
   const weeklyBookings = getWeekBookings(activeBookings, today);
   const revenuePerService = calculateRevenuePerService(activeBookings);
@@ -58,15 +67,15 @@ export async function getAnalytics(): Promise<AnalyticsData> {
   const mostPopularService = getMostPopularService(activeBookings);
   const insights = [
     busiestTimeSlots[0]
-      ? `${busiestTimeSlots[0].slot} is your busiest hour. Consider premium pricing or tighter prep around that window.`
-      : "No peak-hour trend yet.",
+      ? `${busiestTimeSlots[0].slot} is your busiest hour inside business hours.`
+      : null,
     mostPopularService
-      ? `${mostPopularService} is your top service. Feature it in stories and upsell add-ons around it.`
-      : "No service trend yet.",
+      ? `${mostPopularService} is your top booked paid service.`
+      : null,
     lowDemandTimeSlots[0]
-      ? `${lowDemandTimeSlots[0].slot} is underbooked. Fill that slot with outreach or same-day offers.`
-      : "No gap trend yet.",
-  ];
+      ? `${lowDemandTimeSlots[0].slot} is lightly booked and worth filling.`
+      : null,
+  ].filter((insight): insight is string => Boolean(insight));
 
   return {
     totalRevenue: calculateTotalRevenue(activeBookings),
@@ -84,4 +93,9 @@ export async function getAnalytics(): Promise<AnalyticsData> {
     lowDemandTimeSlots,
     insights,
   };
+}
+
+export async function getAnalytics(): Promise<AnalyticsData> {
+  const [bookings, settings] = await Promise.all([getBookings(), getSettings()]);
+  return computeAnalytics(bookings, settings);
 }

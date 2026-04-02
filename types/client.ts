@@ -1,4 +1,4 @@
-export type ClientTag = "New" | "Regular" | "VIP";
+export type ClientTag = "New" | "Regular" | "VIP" | "At Risk";
 export type ClientLifecycle = "New" | "Active" | "Loyal" | "At Risk" | "Lost";
 
 export interface Client {
@@ -11,12 +11,15 @@ export interface Client {
   totalSpent: number;
   lastVisit: string;
   tags: string[];
+  note: string;
   notesHistory: string[];
   createdAt: string;
   tag: ClientTag;
   lifecycle: ClientLifecycle;
   score: number;
   preferences: string[];
+  preferredTime?: string | null;
+  preferredService?: string | null;
   isInactive: boolean;
   lastContactedAt?: string | null;
   reactivationEligible: boolean;

@@ -10,6 +10,9 @@ export function calculateRevenuePerService(bookings: Booking[]): Record<string, 
   const result: Record<string, number> = {};
 
   for (const booking of filterCompletedRevenueBookings(bookings)) {
+    if (booking.serviceId === "consultation") {
+      continue;
+    }
     result[booking.serviceName] = (result[booking.serviceName] || 0) + booking.price;
   }
 
@@ -20,6 +23,9 @@ export function getMostPopularService(bookings: Booking[]): string | null {
   const counts: Record<string, number> = {};
 
   for (const booking of filterCompletedRevenueBookings(bookings)) {
+    if (booking.serviceId === "consultation") {
+      continue;
+    }
     counts[booking.serviceId] = (counts[booking.serviceId] || 0) + 1;
   }
 
@@ -33,7 +39,12 @@ export function getMostPopularService(bookings: Booking[]): string | null {
 }
 
 export function getTodayBookings(bookings: Booking[], today: string) {
-  return bookings.filter((booking) => booking.date === today && booking.status !== "cancelled");
+  return bookings.filter(
+    (booking) =>
+      booking.type !== "blocked" &&
+      booking.date === today &&
+      booking.status !== "cancelled"
+  );
 }
 
 export function getWeekBookings(bookings: Booking[], referenceDate: string) {
@@ -44,5 +55,10 @@ export function getWeekBookings(bookings: Booking[], referenceDate: string) {
     weekDates.add(addDaysToDateString(start, index));
   }
 
-  return bookings.filter((booking) => weekDates.has(booking.date) && booking.status !== "cancelled");
+  return bookings.filter(
+    (booking) =>
+      booking.type !== "blocked" &&
+      weekDates.has(booking.date) &&
+      booking.status !== "cancelled"
+  );
 }

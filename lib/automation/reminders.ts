@@ -54,7 +54,7 @@ export async function runReminderEngine(now = new Date()) {
   const actions: AutomationAction[] = [];
 
   for (const booking of bookings) {
-    if (booking.status !== "upcoming" || !booking.datetime) {
+    if (booking.type === "blocked" || booking.status !== "upcoming" || !booking.datetime) {
       continue;
     }
 
@@ -65,7 +65,7 @@ export async function runReminderEngine(now = new Date()) {
         type: "reminder_24h",
         bookingId: booking.id,
         name: booking.name,
-        phone: booking.phone,
+        phone: booking.phoneNormalized,
         phoneValid: booking.phoneValid,
         serviceName: booking.serviceName,
         time: booking.time,
@@ -86,7 +86,7 @@ export async function runReminderEngine(now = new Date()) {
         type: "reminder_2h",
         bookingId: booking.id,
         name: booking.name,
-        phone: booking.phone,
+        phone: booking.phoneNormalized,
         phoneValid: booking.phoneValid,
         serviceName: booking.serviceName,
         time: booking.time,

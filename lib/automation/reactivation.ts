@@ -36,8 +36,8 @@ export async function runReactivationEngine(now = new Date()) {
     const segment = getSegment(client.totalVisits, client.totalSpent);
     const message =
       buildWhatsAppMessage("reactivation", {
-        phone: client.phone,
-        phoneValid: true,
+        phone: client.phoneNormalized,
+        phoneValid: client.phoneValid,
         name: client.name,
       }) ?? "";
 
@@ -46,12 +46,12 @@ export async function runReactivationEngine(now = new Date()) {
       type: "reactivation",
       clientId: client.id,
       name: client.name,
-      phone: client.phone,
+      phone: client.phoneNormalized,
       phoneValid: client.phoneValid,
       serviceName: segment,
       message,
       whatsappLink: generateWhatsAppLink("reactivation", {
-        phone: client.phone,
+        phone: client.phoneNormalized,
         phoneValid: client.phoneValid,
         name: client.name,
       }),

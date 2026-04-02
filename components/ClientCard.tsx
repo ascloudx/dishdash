@@ -10,12 +10,14 @@ const tagStyles: Record<ClientTag, string> = {
   VIP: "bg-amber-50 text-amber-700 border-amber-200",
   Regular: "bg-indigo-50 text-indigo-700 border-indigo-200",
   New: "bg-rose-50 text-[#C75C6E] border-rose-100",
+  "At Risk": "bg-emerald-50 text-emerald-700 border-emerald-200",
 };
 
 const tagIcons: Record<ClientTag, string> = {
   VIP: "👑",
   Regular: "⭐",
   New: "🌸",
+  "At Risk": "⚠️",
 };
 
 const lifecycleStyles = {

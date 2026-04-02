@@ -1,14 +1,11 @@
-import type { Client, ClientLifecycle, ClientTag } from "@/types/client";
+import type { Client, ClientLifecycle } from "@/types/client";
 import type { Booking } from "@/types/booking";
 import { getBookings } from "./bookings";
 import { getTodayDateString, isOlderThanDays } from "@/lib/date";
 import { getClientAutomationStateMap } from "@/lib/automation/state";
-
-function assignTag(visits: number): ClientTag {
-  if (visits >= 4) return "VIP";
-  if (visits >= 2) return "Regular";
-  return "New";
-}
+import { getClientNotesMap } from "@/lib/clientNotes";
+import { extractPreferences } from "@/lib/clients/extractPreferences";
+import { scoreClient } from "@/lib/clients/scoreClient";
 
 function assignLifecycle(visits: number, lastVisit: string, today: string): ClientLifecycle {
   if (isOlderThanDays(lastVisit, today, 60)) return "Lost";
@@ -16,10 +13,6 @@ function assignLifecycle(visits: number, lastVisit: string, today: string): Clie
   if (visits >= 4) return "Loyal";
   if (visits >= 2) return "Active";
   return "New";
-}
-
-function calculateClientScore(visits: number, totalSpent: number) {
-  return visits * 2 + totalSpent / 50;
 }
 
 function isTimestampOlderThanDays(timestamp: string | null | undefined, days: number) {
@@ -50,10 +43,17 @@ function getLatestName(bookings: Booking[]) {
 export async function getClients(): Promise<Client[]> {
   const bookings = await getBookings();
   const today = getTodayDateString();
-  const clientStateMap = await getClientAutomationStateMap();
+  const [clientStateMap, clientNotesMap] = await Promise.all([
+    getClientAutomationStateMap(),
+    getClientNotesMap(),
+  ]);
   const grouped = new Map<string, Booking[]>();
 
   for (const booking of bookings) {
+    if (booking.type === "blocked" || !booking.phoneNormalized) {
+      continue;
+    }
+
     const key = booking.phoneNormalized || booking.phone;
     const existing = grouped.get(key) ?? [];
     existing.push(booking);
@@ -67,17 +67,35 @@ export async function getClients(): Promise<Client[]> {
       const visitCount = activeBookings.length;
       const totalSpent = activeBookings.reduce((sum, booking) => sum + booking.price, 0);
       const lastVisit = history[0]?.date ?? "";
-      const tag = assignTag(visitCount);
-      const lifecycle = assignLifecycle(visitCount, lastVisit, today);
       const automationState = clientStateMap[phoneNormalized] ?? null;
+      const clientNote = clientNotesMap[phoneNormalized];
       const tagSet = new Set<string>();
       const notesHistory = history.map((booking) => booking.notes).filter(Boolean);
+      if (clientNote?.note) {
+        notesHistory.unshift(clientNote.note);
+      }
+      const extracted = extractPreferences(notesHistory);
 
       for (const booking of history) {
         for (const tagValue of booking.tags) {
           tagSet.add(tagValue);
         }
       }
+      for (const tagValue of clientNote?.tags ?? []) {
+        tagSet.add(tagValue);
+      }
+      for (const tagValue of extracted.tags) {
+        tagSet.add(tagValue);
+      }
+      const scored = scoreClient({
+        totalVisits: visitCount,
+        totalSpent,
+        lastVisit,
+        today,
+      });
+      const lifecycle = assignLifecycle(visitCount, lastVisit, today);
+      const derivedTag: Client["tag"] =
+        scored.tag === "At Risk" ? "At Risk" : scored.tag;
 
       return {
         id: phoneNormalized || history[0]?.id || crypto.randomUUID(),
@@ -89,12 +107,15 @@ export async function getClients(): Promise<Client[]> {
         totalSpent,
         lastVisit,
         tags: Array.from(tagSet),
+        note: clientNote?.note ?? "",
         notesHistory,
         createdAt: [...history].sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0]?.createdAt ?? new Date().toISOString(),
-        tag,
+        tag: derivedTag,
         lifecycle,
-        score: calculateClientScore(visitCount, totalSpent),
-        preferences: derivePreferences(Array.from(tagSet)),
+        score: scored.score,
+        preferences: Array.from(new Set([...derivePreferences(Array.from(tagSet)), ...extracted.preferences])),
+        preferredTime: extracted.preferredTime,
+        preferredService: extracted.preferredService,
         isInactive: lifecycle === "At Risk" || lifecycle === "Lost",
         lastContactedAt: automationState?.lastContactedAt ?? null,
         reactivationEligible:
@@ -123,9 +144,12 @@ export async function getClientProfile(phone: string) {
   const profileBookings = bookings
     .filter(
       (booking) =>
-        booking.phone === phone ||
-        booking.phoneNormalized === phone ||
-        encodeURIComponent(booking.phoneNormalized) === phone
+        booking.type !== "blocked" &&
+        (
+          booking.phone === phone ||
+          booking.phoneNormalized === phone ||
+          encodeURIComponent(booking.phoneNormalized) === phone
+        )
     )
     .sort((a, b) => b.datetime.localeCompare(a.datetime));
 

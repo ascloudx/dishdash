@@ -63,7 +63,7 @@ export default function TodayActionsPanel() {
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
       <Panel
         title="Reminders"
-        subtitle="Stored reminder outputs from the automation cycle."
+        subtitle="Live reminder actions from the latest automation state."
         count={results.reminders.length}
         emptyTitle="No reminders stored"
         emptyBody="Run the automation cycle to populate 24h and 2h reminders."
@@ -75,7 +75,7 @@ export default function TodayActionsPanel() {
 
       <Panel
         title="Reactivations"
-        subtitle="Stored client recovery actions from the backend."
+        subtitle="Live recovery actions from backend client state."
         count={results.reactivations.length}
         emptyTitle="No reactivations stored"
         emptyBody="Eligible inactive clients will appear here after the automation cycle runs."
@@ -87,12 +87,17 @@ export default function TodayActionsPanel() {
 
       <Panel
         title="Insights"
-        subtitle="Backend-generated automation insights."
+        subtitle="Live backend-generated insights computed from current data."
         count={results.insights.length}
-        emptyTitle="No insights stored"
-        emptyBody="Insights will appear here after automation results are written to Redis."
+        emptyTitle="No live insights"
+        emptyBody="Insights will appear here as soon as your current bookings and settings produce them."
       >
-        {results.insights.map((insight, index) => (
+        {[...results.insights]
+          .sort((left, right) => {
+            const priorityOrder = { high: 0, medium: 1, low: 2 };
+            return priorityOrder[left.priority] - priorityOrder[right.priority];
+          })
+          .map((insight, index) => (
           <div
             key={`${insight.type}-${index}`}
             className="rounded-2xl border border-white/70 bg-white/80 p-4 shadow-sm"
@@ -157,6 +162,8 @@ function Panel({
 }
 
 function ActionCard({ action }: { action: AutomationAction }) {
+  const ctaLabel = action.type === "reactivation" ? "Send Message" : "Open WhatsApp";
+
   return (
     <div className="rounded-2xl border border-white/70 bg-white/80 p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -177,7 +184,7 @@ function ActionCard({ action }: { action: AutomationAction }) {
             rel="noreferrer"
             className="rounded-full bg-brand px-4 py-2 text-xs font-semibold text-white shadow-sm transition-transform duration-200 active:scale-[0.98]"
           >
-            Send WhatsApp
+            {ctaLabel}
           </a>
         ) : (
           <span className="rounded-full border border-slate-200 bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-500">

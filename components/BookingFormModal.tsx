@@ -4,12 +4,16 @@ import { useEffect, useState } from "react";
 import type { Booking } from "@/types/booking";
 import type { Service } from "@/config/services";
 import { formatBusinessTime } from "@/lib/date";
+import { normalizeTimeInput } from "@/lib/time";
 
 interface BookingFormModalProps {
   open: boolean;
   services: Service[];
+  slots: string[];
   booking?: Booking | null;
   mode: "create" | "edit";
+  defaultDate?: string;
+  defaultTime?: string;
   onClose: () => void;
   onSaved: (booking: Booking) => void;
 }
@@ -21,6 +25,7 @@ interface BookingFormState {
   price: string;
   date: string;
   time: string;
+  customTime: string;
   notes: string;
 }
 
@@ -31,14 +36,18 @@ const initialState: BookingFormState = {
   price: "0",
   date: "",
   time: "",
+  customTime: "",
   notes: "",
 };
 
 export default function BookingFormModal({
   open,
   services,
+  slots,
   booking,
   mode,
+  defaultDate,
+  defaultTime,
   onClose,
   onSaved,
 }: BookingFormModalProps) {
@@ -58,15 +67,21 @@ export default function BookingFormModal({
         serviceId: booking.serviceId,
         price: String(booking.price),
         date: booking.date,
-        time: booking.time,
+        time: slots.includes(booking.time) ? booking.time : "",
+        customTime: slots.includes(booking.time) ? "" : booking.time,
         notes: booking.notes,
       });
     } else {
-      setForm(initialState);
+      setForm({
+        ...initialState,
+        date: defaultDate ?? "",
+        time: defaultTime && slots.includes(defaultTime) ? defaultTime : "",
+        customTime: defaultTime && !slots.includes(defaultTime) ? defaultTime : "",
+      });
     }
 
     setError(null);
-  }, [booking, open]);
+  }, [booking, defaultDate, defaultTime, open, slots]);
 
   useEffect(() => {
     const service = services.find((entry) => entry.id === form.serviceId);
@@ -96,6 +111,11 @@ export default function BookingFormModal({
     setError(null);
 
     try {
+      const normalizedTime = normalizeTimeInput(form.customTime || form.time);
+      if (!normalizedTime) {
+        throw new Error("Select a valid time or enter a custom time like 11:00 AM.");
+      }
+
       const payload =
         mode === "create"
           ? {
@@ -103,7 +123,7 @@ export default function BookingFormModal({
               phone: form.phone,
               serviceId: form.serviceId,
               date: form.date,
-              time: form.time,
+              time: normalizedTime,
               notes: form.notes,
               source: "manual" as const,
             }
@@ -115,12 +135,12 @@ export default function BookingFormModal({
                 serviceId: form.serviceId,
                 price: Number(form.price),
                 date: form.date,
-                time: form.time,
+                time: normalizedTime,
                 notes: form.notes,
               },
             };
 
-      const response = await fetch(mode === "create" ? "/api/bookings/create" : "/api/bookings/update", {
+      const response = await fetch(mode === "create" ? "/api/bookings/create" : `/api/bookings/${booking?.id}`, {
         method: mode === "create" ? "POST" : "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -224,14 +244,43 @@ export default function BookingFormModal({
           </Field>
 
           <Field label="Time">
-            <input
-              type="time"
+            <select
               value={form.time}
-              onChange={(event) => setForm((current) => ({ ...current, time: event.target.value }))}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  time: normalizeTimeInput(event.target.value) ?? event.target.value,
+                  customTime: "",
+                }))
+              }
               className="w-full rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-sm text-text-main outline-none focus:border-brand/40"
-              required
-            />
+            >
+              <option value="">Select a slot</option>
+              {slots.map((slot) => (
+                <option key={slot} value={slot}>
+                  {slot}
+                </option>
+              ))}
+            </select>
             {form.time ? <p className="mt-1 text-xs text-text-sub">{formatBusinessTime(form.time)}</p> : null}
+          </Field>
+
+          <Field label="Custom Time">
+            <input
+              type="text"
+              value={form.customTime}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  customTime: event.target.value,
+                }))
+              }
+              placeholder="e.g. 11:00 AM"
+              className="w-full rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-sm text-text-main outline-none focus:border-brand/40"
+            />
+            <p className="mt-1 text-xs text-text-sub">
+              Use this only when the booking is outside the current slot list.
+            </p>
           </Field>
 
           <Field label="Notes" className="md:col-span-2">

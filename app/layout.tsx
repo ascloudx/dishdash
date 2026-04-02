@@ -52,6 +52,7 @@ export default function RootLayout({
               <NavLink href="/clients" icon="👥" label="Clients" />
               <NavLink href="/analytics" icon="📊" label="Insights" />
               <NavLink href="/bookings" icon="📅" label="Calendar" />
+              <NavLink href="/dashboard/settings" icon="⚙️" label="Settings" />
             </div>
 
             <div className="hidden lg:block mt-6 w-full">
@@ -59,7 +60,7 @@ export default function RootLayout({
                 <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-text-sub">Quick Actions</p>
                 <div className="mt-3 space-y-2">
                   <QuickAction href="/bookings" label="Add Booking" />
-                  <QuickAction href="/clients" label="Message Client" />
+                  <QuickAction href="/dashboard/settings" label="Open Settings" />
                   <QuickAction href="/analytics" label="View Insights" />
                 </div>
               </div>

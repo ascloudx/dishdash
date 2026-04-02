@@ -1,5 +1,6 @@
 import Link from "next/link";
 import BookingCard from "@/components/BookingCard";
+import ClientNotesEditor from "@/components/ClientNotesEditor";
 import { BUSINESS } from "@/config/business";
 import { getClientProfile } from "@/lib/clients";
 import { buildFollowUpMessage, buildRebookingMessage, generateWhatsAppLink } from "@/lib/whatsapp";
@@ -17,11 +18,11 @@ export default async function ClientProfilePage({
   }
 
   const messageLink = generateWhatsAppLink(
-    profile.client.phone,
+    profile.client.phoneNormalized,
     buildFollowUpMessage(profile.client.name)
   );
   const rebookLink = generateWhatsAppLink(
-    profile.client.phone,
+    profile.client.phoneNormalized,
     buildRebookingMessage(profile.client.name)
   );
 
@@ -102,6 +103,8 @@ export default async function ClientProfilePage({
           )}
         </div>
       </div>
+
+      <ClientNotesEditor clientId={profile.client.phoneNormalized} initialNote={profile.client.note} />
 
       <div className="space-y-4">
         <h3 className="text-lg font-bold text-text-main">Booking History</h3>

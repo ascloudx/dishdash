@@ -1,53 +1,85 @@
-import { BUSINESS } from "@/config/business";
 import { getAnalytics } from "@/lib/analytics";
 import { getBookings } from "@/lib/bookings";
-import { getClients } from "@/lib/clients";
 import { formatBusinessTime, getTodayDateString } from "@/lib/date";
+import { getSettings } from "@/lib/settings";
+import { getVisibleSlots } from "@/lib/slots";
 import type { AutomationInsight } from "@/lib/automation/types";
+import { compareTimeStrings, timeToMinutes } from "@/lib/time";
 
-const LOW_BOOKINGS_THRESHOLD = 3;
+function buildGapRanges(slots: string[], slotDuration: number) {
+  if (slots.length === 0) {
+    return [];
+  }
+
+  const ranges: Array<{ start: string; end: string }> = [];
+  let rangeStart = slots[0];
+  let previous = slots[0];
+
+  for (let index = 1; index < slots.length; index += 1) {
+    const slot = slots[index];
+    if ((timeToMinutes(slot) ?? 0) !== (timeToMinutes(previous) ?? 0) + slotDuration) {
+      ranges.push({ start: rangeStart, end: previous });
+      rangeStart = slot;
+    }
+    previous = slot;
+  }
+
+  ranges.push({ start: rangeStart, end: previous });
+  return ranges;
+}
 
 export async function runInsightsEngine(): Promise<AutomationInsight[]> {
-  const [analytics, bookings, clients] = await Promise.all([
+  const [analytics, bookings, settings] = await Promise.all([
     getAnalytics(),
     getBookings(),
-    getClients(),
+    getSettings(),
   ]);
 
-  const insights: AutomationInsight[] = [];
   const today = getTodayDateString();
   const todayBookings = bookings.filter(
-    (booking) => booking.date === today && booking.status === "upcoming"
+    (booking) =>
+      booking.type !== "blocked" &&
+      booking.date === today &&
+      booking.status !== "cancelled"
   );
+  const insights: AutomationInsight[] = [];
 
-  if (todayBookings.length < LOW_BOOKINGS_THRESHOLD) {
+  if (todayBookings.length <= 1) {
     insights.push({
       type: "low_bookings",
-      message: "Low bookings today — send reactivation messages.",
+      message: "You have low bookings today — consider reaching out to clients.",
       priority: "high",
     });
   }
 
-  const bookedHours = new Set(todayBookings.map((booking) => Number(booking.time.slice(0, 2))));
-  const gapHours: number[] = [];
-  for (let hour = BUSINESS.operatingHours.start; hour < BUSINESS.operatingHours.end; hour += 1) {
-    if (!bookedHours.has(hour)) {
-      gapHours.push(hour);
-    }
-  }
-
-  if (gapHours.length > 0) {
+  const availableSlots = (await getVisibleSlots(
+    settings.businessHours.start,
+    settings.businessHours.end
+  )).sort(compareTimeStrings);
+  const bookedSlots = new Set(todayBookings.map((booking) => booking.time));
+  const freeSlots = availableSlots.filter((slot) => !bookedSlots.has(slot));
+  const gaps = buildGapRanges(freeSlots, settings.slotDuration);
+  if (gaps[0]) {
     insights.push({
       type: "gap_alert",
-      message: `${formatBusinessTime(`${String(gapHours[0]).padStart(2, "0")}:00`)} has no bookings — push offers.`,
+      message:
+        gaps[0].start === gaps[0].end
+          ? `You have a free slot at ${formatBusinessTime(gaps[0].start)}.`
+          : `You have free time between ${formatBusinessTime(gaps[0].start)} - ${formatBusinessTime(gaps[0].end)}.`,
       priority: "high",
     });
   }
 
-  if (analytics.busiestTimeSlots[0]) {
+  if (todayBookings.length === 1) {
     insights.push({
       type: "peak_hours",
-      message: `Peak hours: ${formatBusinessTime(analytics.busiestTimeSlots[0].slot)} — consider premium pricing.`,
+      message: `Your current bookings are around ${formatBusinessTime(todayBookings[0].time)}.`,
+      priority: "medium",
+    });
+  } else if (analytics.busiestTimeSlots[0]) {
+    insights.push({
+      type: "peak_hours",
+      message: `Peak hours are around ${formatBusinessTime(analytics.busiestTimeSlots[0].slot)}.`,
       priority: "medium",
     });
   }
@@ -55,18 +87,13 @@ export async function runInsightsEngine(): Promise<AutomationInsight[]> {
   if (analytics.mostPopularService) {
     insights.push({
       type: "top_service",
-      message: `${analytics.mostPopularService} is your top service — feature it in promotions.`,
+      message: `${analytics.mostPopularService} is currently your top service.`,
       priority: "low",
     });
   }
 
-  if (clients.some((client) => client.reactivationEligible && client.isInactive)) {
-    insights.push({
-      type: "low_bookings",
-      message: "Inactive clients are eligible for outreach — queue reactivation messages.",
-      priority: "medium",
-    });
-  }
-
-  return insights;
+  return insights.sort((left, right) => {
+    const priorityOrder = { high: 0, medium: 1, low: 2 };
+    return priorityOrder[left.priority] - priorityOrder[right.priority];
+  });
 }
