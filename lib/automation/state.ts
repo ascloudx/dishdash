@@ -7,7 +7,7 @@ import type {
 } from "@/lib/automation/types";
 
 const CLIENT_STATE_KEY = "dira:client-state";
-const AUTOMATION_REPORT_KEY = "dira:automation:report";
+const AUTOMATION_REPORT_KEY = "automation:results";
 
 type ClientStateMap = Record<string, ClientAutomationState>;
 

@@ -2,20 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { BUSINESS } from "@/config/business";
+import type { AutomationCycleReport } from "@/lib/automation/types";
 
 interface AnalyticsSnapshot {
   insights: string[];
   weeklyRevenue: number;
-}
-
-interface FocusSummary {
-  recommendedActions: string[];
-  keyInsights: string[];
-  counts: {
-    reminders24h: number;
-    reminders2h: number;
-    reactivations: number;
-  };
 }
 
 export default function OwnerFocusPanel({
@@ -26,7 +17,7 @@ export default function OwnerFocusPanel({
   totalBookingsToday: number;
 }) {
   const [analytics, setAnalytics] = useState<AnalyticsSnapshot | null>(null);
-  const [focus, setFocus] = useState<FocusSummary | null>(null);
+  const [automationResults, setAutomationResults] = useState<AutomationCycleReport | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -35,7 +26,7 @@ export default function OwnerFocusPanel({
       try {
         const [analyticsResponse, actionsResponse] = await Promise.all([
           fetch("/api/analytics", { cache: "no-store" }),
-          fetch("/api/actions/today", { cache: "no-store" }),
+          fetch("/api/automation/results", { cache: "no-store" }),
         ]);
 
         if (!analyticsResponse.ok || !actionsResponse.ok) {
@@ -43,29 +34,11 @@ export default function OwnerFocusPanel({
         }
 
         const analyticsPayload = (await analyticsResponse.json()) as AnalyticsSnapshot;
-        const actionsPayload = (await actionsResponse.json()) as Array<{
-          type: "reminder_24h" | "reminder_2h" | "reactivation";
-        }>;
-        const reminders24h = actionsPayload.filter((action) => action.type === "reminder_24h").length;
-        const reminders2h = actionsPayload.filter((action) => action.type === "reminder_2h").length;
-        const reactivations = actionsPayload.filter((action) => action.type === "reactivation").length;
+        const resultsPayload = (await actionsResponse.json()) as AutomationCycleReport;
 
         if (active) {
           setAnalytics(analyticsPayload);
-          setFocus({
-            keyInsights: [
-              `${reminders24h} reminders pending`,
-              `${reminders2h} bookings entering the 2-hour window`,
-              `${reactivations} inactive clients eligible for outreach`,
-            ],
-            recommendedActions: [
-              reminders24h > 0 ? "Send 24-hour reminders" : "Review tomorrow schedule",
-              reminders2h > 0 ? "Send 2-hour reminders" : "No urgent reminder queue",
-              reactivations > 0 ? "Message overdue clients" : "No reactivation backlog today",
-              totalBookingsToday > 0 ? "Prep today’s booked services first" : "Promote open slots for today",
-            ],
-            counts: { reminders24h, reminders2h, reactivations },
-          });
+          setAutomationResults(resultsPayload);
         }
       } catch (error) {
         console.error(error);
@@ -80,6 +53,20 @@ export default function OwnerFocusPanel({
       clearInterval(interval);
     };
   }, [totalBookingsToday]);
+
+  const reminders24h =
+    automationResults?.reminders.filter((action) => action.type === "reminder_24h").length ?? 0;
+  const reminders2h =
+    automationResults?.reminders.filter((action) => action.type === "reminder_2h").length ?? 0;
+  const reactivations = automationResults?.reactivations.length ?? 0;
+  const keyInsights =
+    automationResults?.insights.map((insight) => insight.message) ?? analytics?.insights ?? [];
+  const recommendedActions = [
+    reminders24h > 0 ? "Send 24-hour reminders" : "Review tomorrow schedule",
+    reminders2h > 0 ? "Send 2-hour reminders" : "No urgent reminder queue",
+    reactivations > 0 ? "Message overdue clients" : "No reactivation backlog today",
+    totalBookingsToday > 0 ? "Prep today’s booked services first" : "Promote open slots for today",
+  ];
 
   const revenuePct = Math.min(Math.round((todayRevenue / BUSINESS.dailyRevenueTarget) * 100), 100);
 
@@ -113,8 +100,8 @@ export default function OwnerFocusPanel({
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
-            <GlassList title="Key Insights" items={focus?.keyInsights ?? analytics?.insights ?? []} />
-            <GlassList title="Recommended Actions" items={focus?.recommendedActions ?? []} />
+            <GlassList title="Key Insights" items={keyInsights} />
+            <GlassList title="Recommended Actions" items={recommendedActions} />
           </div>
         </div>
 
