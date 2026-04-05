@@ -82,8 +82,14 @@ export default function ClientCard({ client }: ClientCardProps) {
           {client.tags.join("  ")}
         </p>
       )}
+      {client.nextActionHint ? (
+        <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">Next Move</p>
+          <p className="mt-1 text-xs leading-5 text-emerald-900">{client.nextActionHint}</p>
+        </div>
+      ) : null}
       <div className="mt-3 flex items-center justify-between text-xs text-text-sub">
-        <span>Score {Math.round(client.score)}</span>
+        <span>Score {Math.round(client.priorityScore ?? client.score)}</span>
         <span className={`rounded-full px-2 py-1 font-semibold ${lifecycleStyles[client.lifecycle]}`}>{client.lifecycle}</span>
       </div>
     </Link>

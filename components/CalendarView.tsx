@@ -13,6 +13,7 @@ import {
   formatBusinessTime,
   getWeekStartDateString,
 } from "@/lib/date";
+import type { SlotMatch } from "@/lib/intelligence/matchClientsToSlots";
 import { compareTimeStrings, isTimeWithinHours } from "@/lib/time";
 
 interface CalendarViewProps {
@@ -20,6 +21,7 @@ interface CalendarViewProps {
   initialDate: string;
   settings?: AppSettings;
   slots?: string[];
+  slotMatches?: SlotMatch[];
   onStatusChange?: (id: string, status: BookingStatus) => void;
   onEdit?: (booking: Booking) => void;
   onDelete?: (booking: Booking) => void;
@@ -40,6 +42,7 @@ export default function CalendarView({
   initialDate,
   settings,
   slots = [],
+  slotMatches = [],
   onStatusChange,
   onEdit,
   onDelete,
@@ -72,9 +75,11 @@ export default function CalendarView({
       )
     )
     .sort(compareTimeStrings);
+  const slotMatchMap = new Map(slotMatches.map((match) => [match.slot, match]));
   const timelineSlots = visibleSlots.map((slot) => ({
     time: slot,
     formatted: formatBusinessTime(slot),
+    match: slotMatchMap.get(slot) ?? null,
     bookings: dayBookings
       .filter((booking) => booking.time === slot)
       .sort((left, right) => left.datetime.localeCompare(right.datetime)),
@@ -188,34 +193,55 @@ export default function CalendarView({
                     ))}
                   </div>
                 ) : (
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <p className="text-sm font-medium text-gray-500">No booking scheduled in this business-hour slot.</p>
-                    <div className="flex flex-wrap gap-2">
-                      {onCreateSlot ? (
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onCreateSlot(selectedDate, slot.time);
-                          }}
-                          className="rounded-full bg-brand px-3.5 py-2 text-xs font-semibold text-white"
-                        >
-                          Add Booking
-                        </button>
-                      ) : null}
-                      {onBlockSlot ? (
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onBlockSlot(selectedDate, slot.time);
-                          }}
-                          className="rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-600"
-                        >
-                          Block Slot
-                        </button>
-                      ) : null}
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <p className="text-sm font-medium text-gray-500">No booking scheduled in this business-hour slot.</p>
+                      <div className="flex flex-wrap gap-2">
+                        {onCreateSlot ? (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onCreateSlot(selectedDate, slot.time);
+                            }}
+                            className="rounded-full bg-brand px-3.5 py-2 text-xs font-semibold text-white"
+                          >
+                            Add Booking
+                          </button>
+                        ) : null}
+                        {onBlockSlot ? (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onBlockSlot(selectedDate, slot.time);
+                            }}
+                            className="rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-600"
+                          >
+                            Block Slot
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
+
+                    {slot.match?.candidates[0] ? (
+                      <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                          Best Fit
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-emerald-900">
+                          {slot.match.candidates[0].name}
+                        </p>
+                        <p className="mt-1 text-xs leading-5 text-emerald-900/80">
+                          {slot.match.candidates[0].reason}
+                        </p>
+                        {slot.match.candidates.length > 1 ? (
+                          <p className="mt-2 text-[11px] text-emerald-800/70">
+                            {slot.match.candidates.length - 1} more client{slot.match.candidates.length - 1 === 1 ? "" : "s"} also fit this slot.
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </div>

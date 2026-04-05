@@ -17,6 +17,9 @@ export interface Client {
   tag: ClientTag;
   lifecycle: ClientLifecycle;
   score: number;
+  priorityScore?: number;
+  priorityReason?: string;
+  nextActionHint?: string;
   preferences: string[];
   preferredTime?: string | null;
   preferredService?: string | null;

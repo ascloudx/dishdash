@@ -44,7 +44,7 @@ function flattenPeakHours(slotCounts: Map<string, number>) {
     .sort((left, right) => compareTimeStrings(left[0], right[0]))
     .map(([slot, count]) => ({
       type: "peak_hours",
-      message: `${formatBusinessTime(slot)} is one of your busiest booking windows.`,
+      message: `${formatBusinessTime(slot)} is one of your busiest booking windows, so protect it or test premium pricing.`,
       priority: "medium" as const,
       data: {
         slot,
@@ -97,7 +97,7 @@ export function generateInsights(params: {
     capacity > 0 && utilization < 0.5
       ? {
           type: "low_bookings",
-          message: `Only ${todayBookings.length} of ${capacity} available slots are filled today.`,
+          message: `Only ${todayBookings.length} of ${capacity} available slots are filled today, so outreach should start now.`,
           priority: "high" as const,
           data: {
             bookingsToday: todayBookings.length,
@@ -123,7 +123,7 @@ export function generateInsights(params: {
     date: today,
   }).map((gap) => ({
     type: "dead_slot",
-    message: `${formatBusinessTime(gap.slot)} is open inside working hours and worth promoting.`,
+    message: `${formatBusinessTime(gap.slot)} is open inside working hours, so message a best-fit client to fill it.`,
     priority: gap.priorityScore >= 45 ? "high" as const : "medium" as const,
     data: {
       slot: gap.slot,
@@ -149,7 +149,7 @@ export function generateInsights(params: {
   const topService = topServiceEntry
     ? {
         type: "top_service",
-        message: `${topServiceEntry[1].serviceName} is your most-booked paid service right now.`,
+        message: `${topServiceEntry[1].serviceName} is your most-booked paid service right now, so feature it in outreach.`,
         priority: "low" as const,
         data: {
           serviceId: topServiceEntry[0],
@@ -165,7 +165,7 @@ export function generateInsights(params: {
     revenueGapAmount > 0
       ? {
           type: "revenue_gap",
-          message: `You are ${params.settings.currency} ${revenueGapAmount.toLocaleString("en-CA")} below today's target.`,
+          message: `You are ${params.settings.currency} ${revenueGapAmount.toLocaleString("en-CA")} below today's target, so push one same-day offer now.`,
           priority: revenueGapAmount >= params.settings.dailyTarget * 0.5 ? "high" as const : "medium" as const,
           data: {
             revenueToday,

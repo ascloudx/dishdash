@@ -8,6 +8,7 @@ import BookingFormModal from "@/components/BookingFormModal";
 import type { Booking, BookingStatus } from "@/types/booking";
 import type { Service } from "@/config/services";
 import { getTodayDateString } from "@/lib/date";
+import type { DashboardPayload } from "@/lib/dashboard/types";
 import type { AppSettings } from "@/lib/settings";
 
 export default function BookingsPage() {
@@ -20,6 +21,7 @@ export default function BookingsPage() {
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [dashboard, setDashboard] = useState<DashboardPayload | null>(null);
   const [draftSlot, setDraftSlot] = useState<{ date: string; time: string } | null>(null);
   const today = getTodayDateString();
 
@@ -81,6 +83,20 @@ export default function BookingsPage() {
     }
   }, []);
 
+  const fetchDashboard = useCallback(async () => {
+    try {
+      const res = await fetch("/api/dashboard", { cache: "no-store" });
+      if (!res.ok) {
+        throw new Error("Request failed");
+      }
+      const data: DashboardPayload = await res.json();
+      setDashboard(data);
+    } catch (error) {
+      console.error(error);
+      setDashboard(null);
+    }
+  }, []);
+
   const updateBookingStatus = useCallback(async (id: string, status: BookingStatus) => {
     try {
       const response = await fetch(`/api/bookings/${id}`, {
@@ -99,10 +115,11 @@ export default function BookingsPage() {
       setBookings((current) =>
         current.map((booking) => (booking.id === updated.id ? updated : booking))
       );
+      fetchDashboard();
     } catch (error) {
       console.error(error);
     }
-  }, []);
+  }, [fetchDashboard]);
 
   const handleDelete = useCallback(async (booking: Booking) => {
     if (!window.confirm(`Delete booking for ${booking.name}?`)) {
@@ -119,17 +136,19 @@ export default function BookingsPage() {
       }
 
       setBookings((current) => current.filter((entry) => entry.id !== booking.id));
+      fetchDashboard();
     } catch (error) {
       console.error(error);
     }
-  }, []);
+  }, [fetchDashboard]);
 
   useEffect(() => {
     fetchBookings();
     fetchServices();
     fetchSettings();
     fetchSlots();
-  }, [fetchBookings, fetchServices, fetchSettings, fetchSlots]);
+    fetchDashboard();
+  }, [fetchBookings, fetchServices, fetchSettings, fetchSlots, fetchDashboard]);
 
   const filtered = search.trim()
     ? bookings.filter(
@@ -181,10 +200,11 @@ export default function BookingsPage() {
       const blocked = (await response.json()) as Booking;
       setBookings((current) => [...current, blocked].sort((a, b) => a.datetime.localeCompare(b.datetime)));
       fetchSlots();
+      fetchDashboard();
     } catch (error) {
       console.error(error);
     }
-  }, [fetchSlots]);
+  }, [fetchDashboard, fetchSlots]);
 
   function handleSaved(saved: Booking) {
     setBookings((current) => {
@@ -197,6 +217,7 @@ export default function BookingsPage() {
       next[index] = saved;
       return next.sort((a, b) => a.datetime.localeCompare(b.datetime));
     });
+    fetchDashboard();
   }
 
   return (
@@ -223,6 +244,7 @@ export default function BookingsPage() {
               fetchBookings();
               fetchSettings();
               fetchSlots();
+              fetchDashboard();
             }}
             className="rounded-full border border-white/80 bg-white/80 px-4 py-2.5 text-sm font-semibold text-text-sub"
           >
@@ -295,6 +317,7 @@ export default function BookingsPage() {
             initialDate={today}
             settings={settings ?? undefined}
             slots={slots}
+            slotMatches={dashboard?.slotMatches}
             onStatusChange={updateBookingStatus}
             onEdit={openEdit}
             onDelete={handleDelete}

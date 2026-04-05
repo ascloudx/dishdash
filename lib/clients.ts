@@ -6,6 +6,7 @@ import { getClientAutomationStateMap } from "@/lib/automation/state";
 import { getClientNotesMap } from "@/lib/clientNotes";
 import { extractPreferences } from "@/lib/clients/extractPreferences";
 import { scoreClient } from "@/lib/clients/scoreClient";
+import { prioritizeClients } from "@/lib/intelligence/prioritizeClients";
 
 function assignLifecycle(visits: number, lastVisit: string, today: string): ClientLifecycle {
   if (isOlderThanDays(lastVisit, today, 60)) return "Lost";
@@ -60,7 +61,7 @@ export async function getClients(): Promise<Client[]> {
     grouped.set(key, existing);
   }
 
-  return Array.from(grouped.entries())
+  const baseClients = Array.from(grouped.entries())
     .map(([phoneNormalized, clientBookings]) => {
       const activeBookings = clientBookings.filter((booking) => booking.status !== "cancelled");
       const history = [...clientBookings].sort((a, b) => b.datetime.localeCompare(a.datetime));
@@ -123,8 +124,32 @@ export async function getClients(): Promise<Client[]> {
           isTimestampOlderThanDays(automationState?.lastContactedAt, 7),
       };
     })
-    .filter((client) => Boolean(client.lastVisit))
-    .sort((a, b) => b.score - a.score);
+    .filter((client) => Boolean(client.lastVisit));
+
+  const prioritized = prioritizeClients({
+    clients: baseClients,
+    bookings,
+    today,
+  });
+  const priorityMap = new Map(
+    prioritized.map((entry) => [
+      entry.clientId,
+      {
+        priorityScore: entry.priorityScore,
+        priorityReason: entry.reason,
+        nextActionHint: entry.nextActionHint,
+      },
+    ])
+  );
+
+  return baseClients
+    .map((client) => ({
+      ...client,
+      priorityScore: priorityMap.get(client.id)?.priorityScore ?? client.score,
+      priorityReason: priorityMap.get(client.id)?.priorityReason,
+      nextActionHint: priorityMap.get(client.id)?.nextActionHint,
+    }))
+    .sort((a, b) => (b.priorityScore ?? b.score) - (a.priorityScore ?? a.score));
 }
 
 export async function searchClients(query: string) {
