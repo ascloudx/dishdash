@@ -7,6 +7,7 @@ export interface GeneratedAction {
   id: string;
   title: string;
   reason: string;
+  clientNames: string[];
   dataReference: string;
   clientIds: string[];
   bookingIds: string[];
@@ -18,12 +19,17 @@ export interface GeneratedAction {
   href?: string | null;
 }
 
+function getClientHref(clientId: string) {
+  return `/clients/${encodeURIComponent(clientId)}`;
+}
+
 export function generateActions(params: {
   insights: GeneratedInsights;
   slotMatches: SlotMatch[];
   prioritizedClients: PrioritizedClient[];
 }): GeneratedAction[] {
   const actions: GeneratedAction[] = [];
+  const usedClientIds = new Set<string>();
 
   const topSlotMatch = params.slotMatches[0];
   if (topSlotMatch && topSlotMatch.candidates[0]) {
@@ -42,22 +48,35 @@ export function generateActions(params: {
       id: `action:slot:${topSlotMatch.slot}:${topCandidate.clientId}`,
       title:
         topSlotMatch.candidates.length > 1
-          ? `Message ${topCandidate.name} and ${topSlotMatch.candidates.length - 1} others to fill ${topSlotMatch.slot}`
-          : `Message ${topCandidate.name} to fill ${topSlotMatch.slot}`,
-      reason: topCandidate.reason,
+          ? outreach.messageLink
+            ? `Message ${topCandidate.name} and ${topSlotMatch.candidates.length - 1} others to fill ${topSlotMatch.slot}`
+            : `Review ${topCandidate.name} and ${topSlotMatch.candidates.length - 1} others for ${topSlotMatch.slot}`
+          : outreach.messageLink
+            ? `Message ${topCandidate.name} to fill ${topSlotMatch.slot}`
+            : `Review ${topCandidate.name} for ${topSlotMatch.slot}`,
+      reason: outreach.messageLink
+        ? topCandidate.reason
+        : `${topCandidate.reason} No valid phone is stored, so this needs a manual follow-up.`,
+      clientNames: topSlotMatch.candidates.map((candidate) => candidate.name),
       dataReference: `dead_slot:${topSlotMatch.slot}`,
       clientIds: topSlotMatch.candidates.map((candidate) => candidate.clientId),
       bookingIds: [],
       slot: topSlotMatch.slot,
       message: outreach.message,
       messageLink: outreach.messageLink,
-      executionType: "whatsapp",
+      executionType: outreach.messageLink ? "whatsapp" : "review",
       priorityScore: topCandidate.fitScore,
+      href: outreach.messageLink ? outreach.messageLink : getClientHref(topCandidate.clientId),
     });
+    topSlotMatch.candidates.forEach((candidate) => usedClientIds.add(candidate.clientId));
   }
 
-  if (params.insights.lowBookingWarning && params.prioritizedClients[0]) {
-    const client = params.prioritizedClients[0];
+  const nextRecoveryClient =
+    params.prioritizedClients.find((client) => !usedClientIds.has(client.clientId)) ??
+    params.prioritizedClients[0];
+
+  if (params.insights.lowBookingWarning && nextRecoveryClient) {
+    const client = nextRecoveryClient;
     const outreach = generateMessage({
       client: client.client,
       slot: params.slotMatches[0]?.slot ?? null,
@@ -67,16 +86,44 @@ export function generateActions(params: {
 
     actions.push({
       id: `action:recovery:${client.clientId}`,
-      title: `Message ${client.name} to lift today's bookings`,
-      reason: params.insights.lowBookingWarning.message,
+      title: outreach.messageLink
+        ? `Message ${client.name} to lift today's bookings`
+        : `Review ${client.name} to lift today's bookings`,
+      reason: outreach.messageLink
+        ? params.insights.lowBookingWarning.message
+        : `${params.insights.lowBookingWarning.message} No valid phone is stored, so review this client manually.`,
+      clientNames: [client.name],
       dataReference: "low_bookings:capacity",
       clientIds: [client.clientId],
       bookingIds: [],
       slot: params.slotMatches[0]?.slot ?? null,
       message: outreach.message,
       messageLink: outreach.messageLink,
-      executionType: "whatsapp",
+      executionType: outreach.messageLink ? "whatsapp" : "review",
       priorityScore: client.priorityScore,
+      href: outreach.messageLink ? outreach.messageLink : getClientHref(client.clientId),
+    });
+    usedClientIds.add(client.clientId);
+  }
+
+  const manualReviewClient = params.prioritizedClients.find(
+    (client) => !client.client.phoneValid && !usedClientIds.has(client.clientId)
+  );
+  if (params.insights.lowBookingWarning && manualReviewClient) {
+    actions.push({
+      id: `action:manual-review:${manualReviewClient.clientId}`,
+      title: `Review ${manualReviewClient.name} for rebooking`,
+      reason: `${manualReviewClient.reason} No valid phone is stored, so review this client manually and update contact details before outreach.`,
+      clientNames: [manualReviewClient.name],
+      dataReference: "manual_review:missing_phone",
+      clientIds: [manualReviewClient.clientId],
+      bookingIds: [],
+      slot: params.slotMatches[0]?.slot ?? null,
+      message: null,
+      messageLink: null,
+      executionType: "review",
+      priorityScore: manualReviewClient.priorityScore + 6,
+      href: getClientHref(manualReviewClient.clientId),
     });
   }
 
@@ -85,6 +132,7 @@ export function generateActions(params: {
       id: "action:revenue-gap",
       title: "Push a same-day offer",
       reason: params.insights.revenueGap.message,
+      clientNames: [],
       dataReference: "revenue_gap:daily_target",
       clientIds: [],
       bookingIds: [],
@@ -106,6 +154,7 @@ export function generateActions(params: {
       id: `action:top-service:${serviceName}`,
       title: `Feature ${serviceName}`,
       reason: params.insights.topService.message,
+      clientNames: [],
       dataReference: `top_service:${serviceName}`,
       clientIds: [],
       bookingIds: [],
@@ -127,6 +176,7 @@ export function generateActions(params: {
       id: `action:peak:${peakSlot}`,
       title: "Review peak-hour pricing",
       reason: params.insights.peakHours[0].message,
+      clientNames: [],
       dataReference: `peak_hours:${peakSlot}`,
       clientIds: [],
       bookingIds: [],

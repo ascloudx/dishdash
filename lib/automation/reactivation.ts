@@ -55,7 +55,14 @@ export async function runReactivationEngine(now = new Date()) {
         phoneValid: client.phoneValid,
         name: client.name,
       }),
-      helper: `${segment} client inactive since ${client.lastVisit}`,
+      helper: [
+        `${segment} client inactive since ${client.lastVisit}`,
+        client.preferredTime ? `Usually books ${client.preferredTime}` : null,
+        client.preferredDayOfWeek ? `Often books on ${client.preferredDayOfWeek}s` : null,
+        client.preferredService ? `Usually gets ${client.preferredService}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
       createdAt: now.toISOString(),
     };
 

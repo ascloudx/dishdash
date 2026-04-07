@@ -45,6 +45,7 @@ export interface BehaviorSummary {
   executedCount: number;
   ignoredCount: number;
   completedActionIds: string[];
+  completedClientIds: string[];
   missedOpportunities: MissedOpportunity[];
   reinforcement: string[];
 }
@@ -183,10 +184,17 @@ export async function getBehaviorSummary(date: string) {
       executedCount: 0,
       ignoredCount: 0,
       completedActionIds: [],
+      completedClientIds: [],
       missedOpportunities: [],
       reinforcement: [],
     } satisfies BehaviorSummary;
   }
+
+  const completedClientIds = Array.from(
+    new Set(
+      entry.executedActionIds.flatMap((actionId) => entry.shownActions[actionId]?.clientIds ?? [])
+    )
+  );
 
   const reinforcement = [
     entry.executedActionIds.length > 0
@@ -202,6 +210,7 @@ export async function getBehaviorSummary(date: string) {
     executedCount: entry.executedActionIds.length,
     ignoredCount: entry.ignoredActionIds.length,
     completedActionIds: entry.executedActionIds,
+    completedClientIds,
     missedOpportunities: entry.missedOpportunities,
     reinforcement,
   } satisfies BehaviorSummary;

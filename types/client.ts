@@ -22,7 +22,9 @@ export interface Client {
   nextActionHint?: string;
   preferences: string[];
   preferredTime?: string | null;
+  preferredDayOfWeek?: string | null;
   preferredService?: string | null;
+  autoSummary?: string | null;
   isInactive: boolean;
   lastContactedAt?: string | null;
   reactivationEligible: boolean;

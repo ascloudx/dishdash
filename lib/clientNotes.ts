@@ -42,3 +42,21 @@ export async function updateClientNote(clientId: string, note: string) {
   await redis.setJSON(CLIENT_NOTES_KEY, current);
   return current[clientId];
 }
+
+export async function moveClientNote(fromClientId: string, toClientId: string) {
+  if (!fromClientId || !toClientId || fromClientId === toClientId) {
+    return null;
+  }
+
+  const current = await getClientNotesMap();
+  const existing = current[fromClientId];
+
+  if (!existing) {
+    return null;
+  }
+
+  current[toClientId] = existing;
+  delete current[fromClientId];
+  await redis.setJSON(CLIENT_NOTES_KEY, current);
+  return current[toClientId];
+}

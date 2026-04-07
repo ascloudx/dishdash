@@ -8,9 +8,17 @@ export function generateMessage(params: {
   reason?: string | null;
 }) {
   const slotLine = params.slot ? `I have a ${params.slot} opening` : "I have an opening";
-  const serviceLine = params.service ? `for a ${params.service}` : "for your next set";
+  const serviceLine =
+    params.service ?? params.client.preferredService
+      ? `for a ${params.service ?? params.client.preferredService}`
+      : "for your next set";
+  const timingLine = params.client.preferredDayOfWeek
+    ? ` It matches the ${params.client.preferredDayOfWeek.toLowerCase()} timing you usually book.`
+    : params.client.preferredTime
+      ? ` It lines up with your usual ${params.client.preferredTime.toLowerCase()} slot.`
+      : "";
   const reasonLine = params.reason ? ` Thought of you because ${params.reason.toLowerCase()}` : "";
-  const message = `Hey ${params.client.name} 💖 ${slotLine} ${serviceLine} today. Want me to hold it for you?${reasonLine}`.trim();
+  const message = `Hey ${params.client.name} 💖 ${slotLine} ${serviceLine} today. Want me to hold it for you?${timingLine}${reasonLine}`.trim();
 
   return {
     message,

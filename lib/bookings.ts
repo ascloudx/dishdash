@@ -8,6 +8,11 @@ import { redis } from "@/lib/redis";
 import { addCustomSlot } from "@/lib/slots";
 import { normalizeTimeInput } from "@/lib/time";
 import type { Booking, BookingSource, BookingStatus } from "@/types/booking";
+import {
+  prepareStructuredImport,
+  type StructuredImportEntry,
+  upsertImportedBookings,
+} from "@/lib/imports/structuredImport";
 
 const BOOKINGS_KEY = "dira:bookings";
 
@@ -212,6 +217,18 @@ export async function deleteBooking(id: string) {
   return true;
 }
 
+export async function importStructuredBookings(entries: StructuredImportEntry[]) {
+  const current = await readBookings();
+  const imported = await prepareStructuredImport(entries);
+  const next = upsertImportedBookings(current, imported);
+  await writeBookings(next);
+
+  return {
+    imported: imported.length,
+    total: next.length,
+  };
+}
+
 function normalizeBookingRecord(record: LegacyBookingRecord): Booking | null {
   const id = record.id?.trim();
   const type = record.type === "blocked" ? "blocked" : "booking";
@@ -253,7 +270,7 @@ function normalizeBookingRecord(record: LegacyBookingRecord): Booking | null {
     (record.serviceId && getServiceById(record.serviceId)) ||
     getServiceByInput(record.serviceName ?? record.service ?? "");
 
-  if (!id || !name || !phone || !service || !date || !time) {
+  if (!id || !name || !service || !date || !time) {
     if (!service && (record.serviceId || record.serviceName || record.service)) {
       console.error("Skipping booking with invalid service", {
         id,

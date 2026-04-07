@@ -40,6 +40,9 @@ export default function OwnerFocusPanel({ data }: OwnerFocusPanelProps) {
   );
   const primaryAction = pendingActions[0] ?? data.actions[0] ?? null;
   const queuedActionCount = Math.max(pendingActions.length - 1, 0);
+  const highPriorityInsights = data.insights
+    .filter((insight) => insight.priority === "high")
+    .slice(0, 2);
   const primaryOpportunity = useMemo(() => {
     if (!primaryAction) {
       return data.engagement.missedOpportunities[0] ?? null;
@@ -64,6 +67,14 @@ export default function OwnerFocusPanel({ data }: OwnerFocusPanelProps) {
     data.analytics.avgBooking;
   const urgencyLabel = getUrgencyLabel(primaryAction?.slot ?? null);
   const secondaryActions = pendingActions.slice(1, 3);
+
+  function getActionClientNames(action: DashboardPayload["actions"][number] | null) {
+    if (!action || !Array.isArray(action.clientNames)) {
+      return [];
+    }
+
+    return action.clientNames;
+  }
 
   async function trackExecution(action: DashboardPayload["actions"][number]) {
     try {
@@ -163,6 +174,11 @@ export default function OwnerFocusPanel({ data }: OwnerFocusPanelProps) {
                 <p className="max-w-2xl text-sm leading-6 text-text-sub">
                   {primaryAction?.reason ?? data.dailyBrief.biggestOpportunity}
                 </p>
+                {getActionClientNames(primaryAction).length > 1 ? (
+                  <p className="text-xs leading-5 text-text-muted">
+                    Targets: {getActionClientNames(primaryAction).join(", ")}
+                  </p>
+                ) : null}
               </div>
 
               <span
@@ -240,56 +256,13 @@ export default function OwnerFocusPanel({ data }: OwnerFocusPanelProps) {
       ) : (
         <div className="mt-6 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
           <div className="space-y-6">
-            <div className="grid gap-4 md:grid-cols-2">
-              <AnalyzeMetric label="Daily Score" value={`${data.engagement.dailyScore}/100`} />
-              <AnalyzeMetric
-                label="Action Streak"
-                value={`${data.engagement.streak} day${data.engagement.streak === 1 ? "" : "s"}`}
-              />
-              <AnalyzeMetric
-                label="Weekly Progress"
-                value={`${data.engagement.progress.progressPercent}%`}
-              />
-              <AnalyzeMetric
-                label="Revenue Today"
-                value={`${BUSINESS.currency}${data.analytics.revenueToday.toLocaleString(BUSINESS.locale)}`}
-              />
-            </div>
-
-            <div className="rounded-3xl border border-white/80 bg-white/85 p-5 shadow-sm">
-              <SectionTitle
-                title="Priority Queue"
-                subtitle="The next actions in order, based on live data."
-              />
-              <div className="mt-4 space-y-3">
-                {pendingActions.slice(0, 3).map((action) => (
-                  <div
-                    key={action.id}
-                    className="rounded-2xl border border-white/80 bg-white/90 p-4 shadow-sm"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <p className="text-sm font-semibold text-text-main">{action.title}</p>
-                        <p className="text-xs leading-5 text-text-sub">{action.reason}</p>
-                      </div>
-                      <span
-                        className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${priorityStyles[getPriorityBand(action.priorityScore)]}`}
-                      >
-                        {action.executionType}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
             <div className="rounded-3xl border border-white/80 bg-white/85 p-5 shadow-sm">
               <SectionTitle
                 title="Data-Backed Insights"
-                subtitle="Expanded context only, with no duplicate calls to action."
+                subtitle="Only the strongest high-priority context remains here."
               />
               <div className="mt-4 space-y-3">
-                {data.insights.map((insight, index) => (
+                {highPriorityInsights.length > 0 ? highPriorityInsights.map((insight, index) => (
                   <div
                     key={`${insight.type}-${index}`}
                     className="rounded-2xl border border-white/80 bg-white/90 p-4 shadow-sm"
@@ -303,7 +276,11 @@ export default function OwnerFocusPanel({ data }: OwnerFocusPanelProps) {
                       <p className="text-sm leading-6 text-text-main">{insight.message}</p>
                     </div>
                   </div>
-                ))}
+                )) : (
+                  <p className="rounded-2xl border border-dashed border-brand-light p-4 text-sm text-text-sub">
+                    No high-priority issues are active right now.
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -457,15 +434,6 @@ function FocusStat({ label, value }: { label: string; value: string }) {
     <div className="rounded-2xl border border-white/80 bg-gradient-to-br from-white to-rose-50/50 p-4 shadow-sm">
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-text-muted">{label}</p>
       <p className="mt-2 text-base font-semibold leading-6 text-text-main">{value}</p>
-    </div>
-  );
-}
-
-function AnalyzeMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-white/80 bg-white/85 p-4 shadow-sm">
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-text-muted">{label}</p>
-      <p className="mt-2 text-xl font-bold text-text-main">{value}</p>
     </div>
   );
 }

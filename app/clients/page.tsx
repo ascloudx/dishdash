@@ -7,7 +7,7 @@ import type { Client } from "@/types/client";
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [search, setSearch] = useState("");
-  const [tagFilter, setTagFilter] = useState<"" | "VIP" | "Regular" | "New">("");
+  const [tagFilter, setTagFilter] = useState<"" | "VIP" | "Regular" | "New" | "At Risk">("");
   const [loading, setLoading] = useState(true);
 
   const fetchClients = useCallback(async () => {
@@ -43,6 +43,7 @@ export default function ClientsPage() {
   const vipCount = clients.filter((c) => c.tag === "VIP").length;
   const regularCount = clients.filter((c) => c.tag === "Regular").length;
   const newCount = clients.filter((c) => c.tag === "New").length;
+  const atRiskCount = clients.filter((c) => c.tag === "At Risk").length;
   const topClients = [...filtered].sort((a, b) => b.score - a.score).slice(0, 6);
   const atRiskClients = filtered.filter((client) => client.isInactive).sort((a, b) => b.score - a.score);
   const newClients = filtered.filter((client) => client.tag === "New").sort((a, b) => b.score - a.score);
@@ -55,7 +56,7 @@ export default function ClientsPage() {
           Client Directory <span>👥</span>
         </h2>
         <p className="text-text-sub mt-1">
-          {clients.length} clients · {vipCount} VIP · {regularCount} Regular · {newCount} New
+          {clients.length} clients · {vipCount} VIP · {regularCount} Regular · {newCount} New · {atRiskCount} At Risk
         </p>
       </div>
 
@@ -66,6 +67,7 @@ export default function ClientsPage() {
           { label: "👑 VIP", value: "vip" },
           { label: "⭐ Regular", value: "regular" },
           { label: "🌸 New", value: "new" },
+          { label: "⚠️ At Risk", value: "at-risk" },
         ].map((f) => (
           <button
             key={f.label}
@@ -77,14 +79,17 @@ export default function ClientsPage() {
                     ? "VIP"
                     : f.value === "regular"
                       ? "Regular"
-                      : "New"
+                      : f.value === "new"
+                        ? "New"
+                        : "At Risk"
               )
             }
             className={`rounded-full px-4 py-1.5 text-sm font-medium border transition-all duration-200 ${
               (f.value === "" && tagFilter === "") ||
               (f.value === "vip" && tagFilter === "VIP") ||
               (f.value === "regular" && tagFilter === "Regular") ||
-              (f.value === "new" && tagFilter === "New")
+              (f.value === "new" && tagFilter === "New") ||
+              (f.value === "at-risk" && tagFilter === "At Risk")
                 ? "bg-brand text-white border-brand shadow-sm"
                 : "bg-white text-text-sub border-gray-200 hover:border-brand/40 hover:text-brand"
             }`}
@@ -143,7 +148,7 @@ function ClientSection({ title, clients }: { title: string; clients: Client[] })
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {clients.map((client, index) => (
           <div
-            key={`${title}-${client.phoneNormalized}`}
+            key={`${title}-${client.id}`}
             className="animate-fade-in"
             style={{ animationDelay: `${index * 40}ms` }}
           >

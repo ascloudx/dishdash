@@ -19,12 +19,27 @@ function daysSince(date: string, today: string) {
 }
 
 function hasBookingToday(client: Client, bookings: Booking[], today: string) {
+  const fallbackKey = `name:${client.name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()}`;
+
   return bookings.some(
     (booking) =>
       booking.type !== "blocked" &&
       booking.status !== "cancelled" &&
       booking.date === today &&
-      booking.phoneNormalized === client.phoneNormalized
+      (
+        (client.phoneNormalized && booking.phoneNormalized === client.phoneNormalized) ||
+        (!client.phoneNormalized && `name:${booking.name
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()}` === fallbackKey)
+      )
   );
 }
 
@@ -41,11 +56,13 @@ export function prioritizeClients(params: {
   clients: Client[];
   bookings: Booking[];
   today?: string;
+  suppressedClientIds?: string[];
 }) {
   const today = params.today ?? getTodayDateString();
+  const suppressedClientIds = new Set(params.suppressedClientIds ?? []);
 
-  return params.clients
-    .filter((client) => client.phoneValid && !hasBookingToday(client, params.bookings, today))
+  const ranked = params.clients
+    .filter((client) => !hasBookingToday(client, params.bookings, today))
     .map((client) => {
       const overdueDays = daysSince(client.lastVisit, today);
       const overdueWeight = overdueDays > 35 ? 30 : overdueDays > 21 ? 18 : overdueDays > 14 ? 10 : 0;
@@ -64,11 +81,15 @@ export function prioritizeClients(params: {
           : `${client.name} has ${client.totalVisits} visits and ${client.totalSpent.toLocaleString("en-CA")} in spend.`;
 
       const nextActionHint =
-        client.preferredTime
-          ? `Reach out for ${client.preferredTime.toLowerCase()} availability.`
-          : client.preferredService
-            ? `Reach out with a ${client.preferredService} opening.`
-            : "Reach out with the next open slot.";
+        !client.phoneValid
+          ? "Review this client manually and add contact details for outreach."
+          : client.preferredTime
+            ? `Reach out for ${client.preferredTime.toLowerCase()} availability.`
+            : client.preferredDayOfWeek
+              ? `Reach out for a ${client.preferredDayOfWeek.toLowerCase()} slot.`
+            : client.preferredService
+              ? `Reach out with a ${client.preferredService} opening.`
+              : "Reach out with the next open slot.";
 
       return {
         clientId: client.id,
@@ -81,4 +102,7 @@ export function prioritizeClients(params: {
       } satisfies PrioritizedClient;
     })
     .sort((left, right) => right.priorityScore - left.priorityScore);
+
+  const unsuppressed = ranked.filter((entry) => !suppressedClientIds.has(entry.clientId));
+  return unsuppressed.length > 0 ? unsuppressed : ranked;
 }

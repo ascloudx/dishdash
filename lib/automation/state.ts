@@ -36,6 +36,27 @@ export async function updateClientAutomationState(
   return current[phoneNormalized];
 }
 
+export async function moveClientAutomationState(fromClientId: string, toClientId: string) {
+  if (!fromClientId || !toClientId || fromClientId === toClientId) {
+    return null;
+  }
+
+  const current = await getClientAutomationStateMap();
+  const existing = current[fromClientId];
+
+  if (!existing) {
+    return null;
+  }
+
+  current[toClientId] = {
+    ...existing,
+    phoneNormalized: toClientId,
+  };
+  delete current[fromClientId];
+  await redis.setJSON(CLIENT_STATE_KEY, current);
+  return current[toClientId];
+}
+
 export async function saveAutomationReport(report: AutomationCycleReport) {
   await redis.setJSON(AUTOMATION_REPORT_KEY, {
     generatedAt: report.generatedAt,

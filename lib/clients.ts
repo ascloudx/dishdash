@@ -1,12 +1,14 @@
 import type { Client, ClientLifecycle } from "@/types/client";
 import type { Booking } from "@/types/booking";
 import { getBookings } from "./bookings";
+import { updateBooking } from "./bookings";
 import { getTodayDateString, isOlderThanDays } from "@/lib/date";
-import { getClientAutomationStateMap } from "@/lib/automation/state";
-import { getClientNotesMap } from "@/lib/clientNotes";
+import { getClientAutomationStateMap, moveClientAutomationState } from "@/lib/automation/state";
+import { getClientNotesMap, moveClientNote } from "@/lib/clientNotes";
 import { extractPreferences } from "@/lib/clients/extractPreferences";
 import { scoreClient } from "@/lib/clients/scoreClient";
 import { prioritizeClients } from "@/lib/intelligence/prioritizeClients";
+import { normalizePhone } from "@/lib/bookingValidation";
 
 function assignLifecycle(visits: number, lastVisit: string, today: string): ClientLifecycle {
   if (isOlderThanDays(lastVisit, today, 60)) return "Lost";
@@ -35,10 +37,71 @@ function derivePreferences(tags: string[]) {
   });
 }
 
+function getPreferredValue(values: string[]) {
+  const counts = new Map<string, number>();
+
+  for (const value of values.filter(Boolean)) {
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+
+  return [...counts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] ?? null;
+}
+
+function getWeekdayLabel(date: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Edmonton",
+    weekday: "long",
+  }).format(new Date(`${date}T12:00:00.000Z`));
+}
+
+function deriveHistorySignals(bookings: Booking[]) {
+  const active = bookings.filter((booking) => booking.status !== "cancelled");
+  const preferredTime = getPreferredValue(active.map((booking) => booking.time));
+  const preferredService = getPreferredValue(
+    active
+      .filter((booking) => booking.type !== "blocked" && booking.price > 0)
+      .map((booking) => booking.serviceName)
+  );
+  const preferredDayOfWeek = getPreferredValue(active.map((booking) => getWeekdayLabel(booking.date)));
+
+  const preferenceLabels = [
+    preferredTime ? `Usually books ${preferredTime}` : null,
+    preferredDayOfWeek ? `Usually books on ${preferredDayOfWeek}s` : null,
+    preferredService ? `Usually books ${preferredService}` : null,
+  ].filter((value): value is string => Boolean(value));
+
+  const autoSummary =
+    preferenceLabels.length > 0
+      ? preferenceLabels.join(" · ")
+      : null;
+
+  return {
+    preferredTime,
+    preferredService,
+    preferredDayOfWeek,
+    preferenceLabels,
+    autoSummary,
+  };
+}
+
 function getLatestName(bookings: Booking[]) {
   return [...bookings]
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .find((booking) => booking.name.trim())?.name ?? "Client";
+}
+
+function normalizeClientNameKey(name: string) {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getClientIdentityKey(name: string, phone: string, phoneNormalized?: string) {
+  const normalized = phoneNormalized || normalizePhone(phone).normalized;
+  return normalized || `name:${normalizeClientNameKey(name)}`;
 }
 
 export async function getClients(): Promise<Client[]> {
@@ -51,11 +114,14 @@ export async function getClients(): Promise<Client[]> {
   const grouped = new Map<string, Booking[]>();
 
   for (const booking of bookings) {
-    if (booking.type === "blocked" || !booking.phoneNormalized) {
+    if (booking.type === "blocked") {
       continue;
     }
 
-    const key = booking.phoneNormalized || booking.phone;
+    const key =
+      booking.phoneNormalized ||
+      booking.phone ||
+      `name:${normalizeClientNameKey(booking.name)}`;
     const existing = grouped.get(key) ?? [];
     existing.push(booking);
     grouped.set(key, existing);
@@ -68,14 +134,19 @@ export async function getClients(): Promise<Client[]> {
       const visitCount = activeBookings.length;
       const totalSpent = activeBookings.reduce((sum, booking) => sum + booking.price, 0);
       const lastVisit = history[0]?.date ?? "";
-      const automationState = clientStateMap[phoneNormalized] ?? null;
-      const clientNote = clientNotesMap[phoneNormalized];
+      const identityKey =
+        phoneNormalized.startsWith("name:")
+          ? phoneNormalized
+          : phoneNormalized || `name:${normalizeClientNameKey(getLatestName(history))}`;
+      const automationState = clientStateMap[identityKey] ?? null;
+      const clientNote = clientNotesMap[identityKey];
       const tagSet = new Set<string>();
       const notesHistory = history.map((booking) => booking.notes).filter(Boolean);
       if (clientNote?.note) {
         notesHistory.unshift(clientNote.note);
       }
       const extracted = extractPreferences(notesHistory);
+      const historySignals = deriveHistorySignals(history);
 
       for (const booking of history) {
         for (const tagValue of booking.tags) {
@@ -99,10 +170,10 @@ export async function getClients(): Promise<Client[]> {
         scored.tag === "At Risk" ? "At Risk" : scored.tag;
 
       return {
-        id: phoneNormalized || history[0]?.id || crypto.randomUUID(),
+        id: identityKey,
         name: getLatestName(history),
         phone: history[0]?.phone ?? "",
-        phoneNormalized,
+        phoneNormalized: phoneNormalized.startsWith("name:") ? "" : phoneNormalized,
         phoneValid: history.some((booking) => booking.phoneValid),
         totalVisits: visitCount,
         totalSpent,
@@ -114,9 +185,17 @@ export async function getClients(): Promise<Client[]> {
         tag: derivedTag,
         lifecycle,
         score: scored.score,
-        preferences: Array.from(new Set([...derivePreferences(Array.from(tagSet)), ...extracted.preferences])),
-        preferredTime: extracted.preferredTime,
-        preferredService: extracted.preferredService,
+        preferences: Array.from(
+          new Set([
+            ...derivePreferences(Array.from(tagSet)),
+            ...historySignals.preferenceLabels,
+            ...extracted.preferences,
+          ])
+        ),
+        preferredTime: extracted.preferredTime ?? historySignals.preferredTime,
+        preferredDayOfWeek: historySignals.preferredDayOfWeek,
+        preferredService: extracted.preferredService ?? historySignals.preferredService,
+        autoSummary: historySignals.autoSummary,
         isInactive: lifecycle === "At Risk" || lifecycle === "Lost",
         lastContactedAt: automationState?.lastContactedAt ?? null,
         reactivationEligible:
@@ -171,6 +250,8 @@ export async function getClientProfile(phone: string) {
       (booking) =>
         booking.type !== "blocked" &&
         (
+          `name:${normalizeClientNameKey(booking.name)}` === phone ||
+          booking.id === phone ||
           booking.phone === phone ||
           booking.phoneNormalized === phone ||
           encodeURIComponent(booking.phoneNormalized) === phone
@@ -184,7 +265,46 @@ export async function getClientProfile(phone: string) {
 
   const clients = await getClients();
   const phoneNormalized = profileBookings[0].phoneNormalized;
-  const client = clients.find((entry) => entry.phoneNormalized === phoneNormalized) ?? null;
+  const fallbackId = `name:${normalizeClientNameKey(profileBookings[0].name)}`;
+  const client =
+    clients.find((entry) => entry.phoneNormalized === phoneNormalized) ??
+    clients.find((entry) => entry.id === fallbackId || entry.id === phone) ??
+    null;
 
   return client ? { client, bookings: profileBookings } : null;
+}
+
+export async function updateClientProfile(
+  clientId: string,
+  updates: {
+    name?: string;
+    phone?: string;
+  }
+) {
+  const profile = await getClientProfile(clientId);
+
+  if (!profile) {
+    return null;
+  }
+
+  const nextName = updates.name?.trim() || profile.client.name;
+  const nextPhone = updates.phone?.trim() || profile.client.phone;
+  const nextPhoneInfo = normalizePhone(nextPhone);
+  const nextClientId = getClientIdentityKey(nextName, nextPhone, nextPhoneInfo.normalized);
+
+  for (const booking of profile.bookings) {
+    await updateBooking(booking.id, {
+      name: nextName,
+      phone: nextPhone,
+    });
+  }
+
+  if (profile.client.id !== nextClientId) {
+    await Promise.all([
+      moveClientNote(profile.client.id, nextClientId),
+      moveClientAutomationState(profile.client.id, nextClientId),
+    ]);
+  }
+
+  return getClientProfile(nextClientId);
 }

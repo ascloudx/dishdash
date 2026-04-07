@@ -48,10 +48,16 @@ export async function GET() {
     });
     const insights = flattenInsights(generatedInsights);
     const today = getTodayDateString();
+    const [behaviorSummary, previousMissedOpportunities, allActionStates] = await Promise.all([
+      getBehaviorSummary(today),
+      getPreviousDayMissedOpportunities(today),
+      getAllDailyActionStates(),
+    ]);
     const prioritizedClients = prioritizeClients({
       clients,
       bookings,
       today,
+      suppressedClientIds: behaviorSummary.completedClientIds,
     });
     const gaps = detectGaps({
       bookings,
@@ -69,6 +75,7 @@ export async function GET() {
           ? generatedInsights.topService.data.serviceName
           : null,
       today,
+      suppressedClientIds: behaviorSummary.completedClientIds,
     });
     const actions = generateActions({
       insights: generatedInsights,
@@ -83,11 +90,6 @@ export async function GET() {
       monthlyTarget: settings.monthlyTarget,
       yearlyTarget: settings.yearlyTarget,
     });
-    const [behaviorSummary, previousMissedOpportunities, allActionStates] = await Promise.all([
-      getBehaviorSummary(today),
-      getPreviousDayMissedOpportunities(today),
-      getAllDailyActionStates(),
-    ]);
     const missedOpportunities = detectMissedOpportunities({
       bookings,
       slotMatches,

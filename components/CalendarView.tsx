@@ -236,9 +236,14 @@ export default function CalendarView({
                           {slot.match.candidates[0].reason}
                         </p>
                         {slot.match.candidates.length > 1 ? (
-                          <p className="mt-2 text-[11px] text-emerald-800/70">
-                            {slot.match.candidates.length - 1} more client{slot.match.candidates.length - 1 === 1 ? "" : "s"} also fit this slot.
-                          </p>
+                          <div className="mt-2 space-y-1">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-800/70">
+                              Also fits
+                            </p>
+                            <p className="text-[11px] leading-5 text-emerald-800/75">
+                              {slot.match.candidates.slice(1).map((candidate) => candidate.name).join(", ")}
+                            </p>
+                          </div>
                         ) : null}
                       </div>
                     ) : null}

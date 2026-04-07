@@ -1,5 +1,6 @@
 import Link from "next/link";
 import BookingCard from "@/components/BookingCard";
+import ClientProfileEditor from "@/components/ClientProfileEditor";
 import ClientNotesEditor from "@/components/ClientNotesEditor";
 import { BUSINESS } from "@/config/business";
 import { getClientProfile } from "@/lib/clients";
@@ -32,7 +33,7 @@ export default async function ClientProfilePage({
         <div>
           <p className="text-sm text-text-sub">Client Profile</p>
           <h2 className="text-3xl font-bold text-text-main">{profile.client.name}</h2>
-          <p className="text-text-sub">{profile.client.phone}</p>
+          <p className="text-text-sub">{profile.client.phone || "No phone captured"}</p>
         </div>
         <Link href="/clients" className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-text-sub">
           Back to clients
@@ -65,29 +66,49 @@ export default async function ClientProfilePage({
             <p className="text-sm text-text-sub">No explicit preferences captured yet.</p>
           )}
         </div>
+        {profile.client.autoSummary ? (
+          <div className="mt-4 rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Auto Memory</p>
+            <p className="mt-1 text-sm text-sky-900">{profile.client.autoSummary}</p>
+          </div>
+        ) : null}
       </div>
 
       <div className="glass rounded-3xl p-6">
         <h3 className="text-lg font-bold text-text-main">Quick Actions</h3>
         <div className="mt-3 flex flex-wrap gap-3">
-          <a
-            href={messageLink}
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white"
-          >
-            Message client
-          </a>
-          <a
-            href={rebookLink}
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-full border border-rose-100 bg-rose-50 px-4 py-2 text-sm font-semibold text-brand"
-          >
-            Rebook client
-          </a>
+          {messageLink ? (
+            <a
+              href={messageLink}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white"
+            >
+              Message client
+            </a>
+          ) : (
+            <span className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-text-sub">
+              No WhatsApp number
+            </span>
+          )}
+          {rebookLink ? (
+            <a
+              href={rebookLink}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-full border border-rose-100 bg-rose-50 px-4 py-2 text-sm font-semibold text-brand"
+            >
+              Rebook client
+            </a>
+          ) : null}
         </div>
       </div>
+
+      <ClientProfileEditor
+        clientId={profile.client.id}
+        initialName={profile.client.name}
+        initialPhone={profile.client.phone}
+      />
 
       <div className="glass rounded-3xl p-6">
         <h3 className="text-lg font-bold text-text-main">Notes History</h3>
@@ -104,7 +125,7 @@ export default async function ClientProfilePage({
         </div>
       </div>
 
-      <ClientNotesEditor clientId={profile.client.phoneNormalized} initialNote={profile.client.note} />
+      <ClientNotesEditor clientId={profile.client.id} initialNote={profile.client.note} />
 
       <div className="space-y-4">
         <h3 className="text-lg font-bold text-text-main">Booking History</h3>

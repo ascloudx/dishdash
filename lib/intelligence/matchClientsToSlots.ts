@@ -43,6 +43,13 @@ function matchesTimePreference(client: Client, slot: string) {
   return false;
 }
 
+function getWeekdayLabel(date: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Edmonton",
+    weekday: "long",
+  }).format(new Date(`${date}T12:00:00.000Z`));
+}
+
 function recentlyContacted(client: Client) {
   if (!client.lastContactedAt) {
     return false;
@@ -52,12 +59,27 @@ function recentlyContacted(client: Client) {
 }
 
 function alreadyBookedToday(client: Client, bookings: Booking[], today: string) {
+  const fallbackKey = `name:${client.name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()}`;
+
   return bookings.some(
     (booking) =>
       booking.type !== "blocked" &&
       booking.status !== "cancelled" &&
       booking.date === today &&
-      booking.phoneNormalized === client.phoneNormalized
+      (
+        (client.phoneNormalized && booking.phoneNormalized === client.phoneNormalized) ||
+        (!client.phoneNormalized && `name:${booking.name
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()}` === fallbackKey)
+      )
   );
 }
 
@@ -67,21 +89,48 @@ export function matchClientsToSlots(params: {
   bookings: Booking[];
   topServiceName?: string | null;
   today?: string;
+  suppressedClientIds?: string[];
 }) {
   const today = params.today ?? getTodayDateString();
+  const todayWeekday = getWeekdayLabel(today);
+  const suppressedClientIds = new Set(params.suppressedClientIds ?? []);
+  const assignedCounts = new Map<string, number>();
 
-  return params.gaps.map((gap) => {
+  return [...params.gaps]
+    .sort((left, right) => right.priorityScore - left.priorityScore)
+    .map((gap) => {
     const candidates = params.prioritizedClients
-      .filter((entry) => !recentlyContacted(entry.client) && !alreadyBookedToday(entry.client, params.bookings, today))
+      .filter(
+        (entry) =>
+          !suppressedClientIds.has(entry.clientId) &&
+          !recentlyContacted(entry.client) &&
+          !alreadyBookedToday(entry.client, params.bookings, today)
+      )
       .map((entry) => {
-        const timeBoost = matchesTimePreference(entry.client, gap.slot) ? 18 : 0;
+        const timeBoost = matchesTimePreference(entry.client, gap.slot) ? 40 : 0;
+        const dayBoost = entry.client.preferredDayOfWeek === todayWeekday ? 18 : 0;
         const serviceBoost =
           params.topServiceName && entry.client.preferredService === params.topServiceName ? 12 : 0;
-        const fitScore = entry.priorityScore + gap.priorityScore + timeBoost + serviceBoost;
+        const riskBoost =
+          entry.client.lifecycle === "At Risk" || entry.client.lifecycle === "Lost" ? 22 : 0;
+        const overdueBoost = entry.client.isInactive ? 12 : 0;
+        const repetitionPenalty = (assignedCounts.get(entry.clientId) ?? 0) * 45;
+        const fitScore =
+          entry.priorityScore +
+          gap.priorityScore +
+          timeBoost +
+          dayBoost +
+          serviceBoost +
+          riskBoost +
+          overdueBoost -
+          repetitionPenalty;
         const reasonParts = [entry.reason];
 
         if (matchesTimePreference(entry.client, gap.slot)) {
           reasonParts.push(`Prefers ${entry.client.preferredTime?.toLowerCase()} slots.`);
+        }
+        if (entry.client.preferredDayOfWeek === todayWeekday) {
+          reasonParts.push(`Usually books on ${todayWeekday}s.`);
         }
         if (params.topServiceName && entry.client.preferredService === params.topServiceName) {
           reasonParts.push(`Often aligns with ${params.topServiceName}.`);
@@ -98,6 +147,11 @@ export function matchClientsToSlots(params: {
       })
       .sort((left, right) => right.fitScore - left.fitScore)
       .slice(0, 3);
+
+    const topCandidate = candidates[0];
+    if (topCandidate) {
+      assignedCounts.set(topCandidate.clientId, (assignedCounts.get(topCandidate.clientId) ?? 0) + 1);
+    }
 
     return {
       slot: gap.slot,
